@@ -122,8 +122,47 @@ function getSpaceIcon(type: string): string {
                 <span class="space-price">M{{ space.price }}</span>
               </template>
               <template v-else>
-                <span class="space-icon">{{ getSpaceIcon(space.type) }}</span>
-                <span class="space-type-label">{{ space.type.replace(/_/g, ' ').toUpperCase() }}</span>
+                <div class="special-content-wrapper">
+                  <!-- First Class -->
+                  <div v-if="space.type === 'first_class'" class="first-class-content">
+                    <span class="special-label">FIRST CLASS</span>
+                    <div class="elegant-star-ring-v2">
+                      <div class="elegant-star-v2">★</div>
+                    </div>
+                    <span class="special-price">M100</span>
+                  </div>
+                  
+                  <!-- Airport -->
+                  <div v-else-if="space.type === 'airport'" class="airport-content">
+                    <span class="special-label">AIRPORT</span>
+                    <div class="airport-emoji">✈️</div>
+                    <span class="special-price">M100</span>
+                  </div>
+
+                  <!-- Here & Now (Preserved) -->
+                  <div v-else-if="space.type === 'here_and_now'" class="here-now-content">
+                    <div class="globe-motif">
+                      <div class="globe-icon-outline">🌎</div>
+                    </div>
+                    <div class="here-now-text">
+                      <span class="text-here">HERE</span>
+                      <span class="text-and">&</span>
+                      <span class="text-now">NOW</span>
+                    </div>
+                  </div>
+
+                  <!-- Chance (Preserved) -->
+                  <div v-else-if="space.type === 'chance'" class="chance-content">
+                    <span class="large-question-mark">?</span>
+                    <span class="chance-label">CHANCE</span>
+                  </div>
+
+                  <!-- Other special spaces -->
+                  <template v-else>
+                    <span class="space-icon">{{ getSpaceIcon(space.type) }}</span>
+                    <span class="space-type-label">{{ space.type.replace(/_/g, ' ').toUpperCase() }}</span>
+                  </template>
+                </div>
               </template>
             </div>
             
@@ -169,8 +208,47 @@ function getSpaceIcon(type: string): string {
                 <span class="space-price">M{{ space.price }}</span>
               </template>
               <template v-else>
-                <span class="space-icon">{{ getSpaceIcon(space.type) }}</span>
-                <span class="space-type-label">{{ space.type.replace(/_/g, ' ').toUpperCase() }}</span>
+                <div class="special-content-wrapper">
+                  <!-- First Class -->
+                  <div v-if="space.type === 'first_class'" class="first-class-content">
+                    <span class="special-label">FIRST CLASS</span>
+                    <div class="elegant-star-ring-v2">
+                      <div class="elegant-star-v2">★</div>
+                    </div>
+                    <span class="special-price">M100</span>
+                  </div>
+                  
+                  <!-- Airport -->
+                  <div v-else-if="space.type === 'airport'" class="airport-content">
+                    <span class="special-label">AIRPORT</span>
+                    <div class="airport-emoji">✈️</div>
+                    <span class="special-price">M100</span>
+                  </div>
+
+                  <!-- Here & Now (Preserved) -->
+                  <div v-else-if="space.type === 'here_and_now'" class="here-now-content">
+                    <div class="globe-motif">
+                      <div class="globe-icon-outline">🌎</div>
+                    </div>
+                    <div class="here-now-text">
+                      <span class="text-here">HERE</span>
+                      <span class="text-and">&</span>
+                      <span class="text-now">NOW</span>
+                    </div>
+                  </div>
+
+                  <!-- Chance (Preserved) -->
+                  <div v-else-if="space.type === 'chance'" class="chance-content">
+                    <span class="large-question-mark">?</span>
+                    <span class="chance-label">CHANCE</span>
+                  </div>
+
+                  <!-- Other special spaces -->
+                  <template v-else>
+                    <span class="space-icon">{{ getSpaceIcon(space.type) }}</span>
+                    <span class="space-type-label">{{ space.type.replace(/_/g, ' ').toUpperCase() }}</span>
+                  </template>
+                </div>
               </template>
             </div>
             <!-- Property Stamp -->
@@ -201,13 +279,12 @@ function getSpaceIcon(type: string): string {
             </div>
           </div>
           
-          <!-- Center Logo -->
-          <div class="center-logo">
-            <div class="globe-container">
-              <div class="globe"></div>
-            </div>
-            <h1 class="logo-text">MONOPOLY</h1>
-            <h2 class="edition-text">WORLD EDITION</h2>
+          <!-- Deck Placeholders -->
+          <div class="card-deck chance-deck">
+            <div class="deck-outline"></div>
+          </div>
+          <div class="card-deck here-now-deck">
+            <div class="deck-outline"></div>
           </div>
           
           <!-- Passport zone BOTTOM-LEFT -->
@@ -244,8 +321,47 @@ function getSpaceIcon(type: string): string {
                 <span class="space-price">M{{ space.price }}</span>
               </template>
               <template v-else>
-                <span class="space-icon">{{ getSpaceIcon(space.type) }}</span>
-                <span class="space-type-label">{{ space.type.replace(/_/g, ' ').toUpperCase() }}</span>
+                <div class="special-content-wrapper">
+                  <!-- First Class -->
+                  <div v-if="space.type === 'first_class'" class="first-class-content">
+                    <span class="special-label">FIRST CLASS</span>
+                    <div class="elegant-star-ring-v2">
+                      <div class="elegant-star-v2">★</div>
+                    </div>
+                    <span class="special-price">M100</span>
+                  </div>
+                  
+                  <!-- Airport -->
+                  <div v-else-if="space.type === 'airport'" class="airport-content">
+                    <span class="special-label">AIRPORT</span>
+                    <div class="airport-emoji">✈️</div>
+                    <span class="special-price">M100</span>
+                  </div>
+
+                  <!-- Here & Now (Preserved) -->
+                  <div v-else-if="space.type === 'here_and_now'" class="here-now-content">
+                    <div class="globe-motif">
+                      <div class="globe-icon-outline">🌎</div>
+                    </div>
+                    <div class="here-now-text">
+                      <span class="text-here">HERE</span>
+                      <span class="text-and">&</span>
+                      <span class="text-now">NOW</span>
+                    </div>
+                  </div>
+
+                  <!-- Chance (Preserved) -->
+                  <div v-else-if="space.type === 'chance'" class="chance-content">
+                    <span class="large-question-mark">?</span>
+                    <span class="chance-label">CHANCE</span>
+                  </div>
+
+                  <!-- Other special spaces -->
+                  <template v-else>
+                    <span class="space-icon">{{ getSpaceIcon(space.type) }}</span>
+                    <span class="space-type-label">{{ space.type.replace(/_/g, ' ').toUpperCase() }}</span>
+                  </template>
+                </div>
               </template>
             </div>
             <!-- Property Stamp -->
@@ -291,8 +407,47 @@ function getSpaceIcon(type: string): string {
                 <span class="space-price">M{{ space.price }}</span>
               </template>
               <template v-else>
-                <span class="space-icon">{{ getSpaceIcon(space.type) }}</span>
-                <span class="space-type-label">{{ space.type.replace(/_/g, ' ').toUpperCase() }}</span>
+                <div class="special-content-wrapper">
+                  <!-- First Class -->
+                  <div v-if="space.type === 'first_class'" class="first-class-content">
+                    <span class="special-label">FIRST CLASS</span>
+                    <div class="elegant-star-ring-v2">
+                      <div class="elegant-star-v2">★</div>
+                    </div>
+                    <span class="special-price">M100</span>
+                  </div>
+                  
+                  <!-- Airport -->
+                  <div v-else-if="space.type === 'airport'" class="airport-content">
+                    <span class="special-label">AIRPORT</span>
+                    <div class="airport-emoji">✈️</div>
+                    <span class="special-price">M100</span>
+                  </div>
+
+                  <!-- Here & Now (Preserved) -->
+                  <div v-else-if="space.type === 'here_and_now'" class="here-now-content">
+                    <div class="globe-motif">
+                      <div class="globe-icon-outline">🌎</div>
+                    </div>
+                    <div class="here-now-text">
+                      <span class="text-here">HERE</span>
+                      <span class="text-and">&</span>
+                      <span class="text-now">NOW</span>
+                    </div>
+                  </div>
+
+                  <!-- Chance (Preserved) -->
+                  <div v-else-if="space.type === 'chance'" class="chance-content">
+                    <span class="large-question-mark">?</span>
+                    <span class="chance-label">CHANCE</span>
+                  </div>
+
+                  <!-- Other special spaces -->
+                  <template v-else>
+                    <span class="space-icon">{{ getSpaceIcon(space.type) }}</span>
+                    <span class="space-type-label">{{ space.type.replace(/_/g, ' ').toUpperCase() }}</span>
+                  </template>
+                </div>
               </template>
             </div>
             <!-- Property Stamp -->
@@ -310,7 +465,9 @@ function getSpaceIcon(type: string): string {
         <!-- START corner -->
         <div class="corner-space">
           <div class="corner-content start">
-            <div class="start-arrow">➡️</div>
+            <div class="start-diamond-final">
+              <div class="start-arrow-final">➜</div>
+            </div>
             <span class="corner-label start-label">START</span>
             <span class="start-bonus">Collect M200</span>
           </div>
@@ -343,24 +500,24 @@ function getSpaceIcon(type: string): string {
   position: relative;
   /* Blue gradient background like the physical board */
   background: 
-    radial-gradient(ellipse at 30% 30%, rgba(100, 180, 255, 0.15) 0%, transparent 50%),
-    radial-gradient(ellipse at 70% 70%, rgba(50, 150, 220, 0.1) 0%, transparent 40%),
+    radial-gradient(ellipse at 30% 30%, rgba(38, 89, 255, 0.15) 0%, transparent 50%),
+    radial-gradient(ellipse at 70% 70%, rgba(38, 89, 255, 0.1) 0%, transparent 40%),
     linear-gradient(180deg, 
-      #1565C0 0%, 
-      #1E88E5 15%,
-      #42A5F5 30%,
-      #64B5F6 45%,
-      #90CAF9 60%,
-      #BBDEFB 75%,
-      #E3F2FD 90%,
-      #f0f8ff 100%
+      #000000 0%, 
+      #050a14 15%,
+      #0a1428 30%,
+      #0f1e3c 45%,
+      #142850 60%,
+      #193264 75%,
+      #1e3c78 90%,
+      #2659FF 100%
     );
-  border: 5px solid #0D47A1;
+  border: 5px solid #000000;
   border-radius: 6px;
   box-shadow: 
-    0 0 0 10px #1565C0,
-    0 0 0 12px #0D47A1,
-    0 25px 80px rgba(0, 0, 0, 0.6),
+    0 0 0 10px #000000,
+    0 0 0 12px #101010,
+    0 25px 80px rgba(0, 0, 0, 0.8),
     inset 0 0 60px rgba(255, 255, 255, 0.05);
   overflow: hidden;
 }
@@ -412,7 +569,7 @@ function getSpaceIcon(type: string): string {
   width: var(--corner-size);
   height: var(--corner-size);
   background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
-  border: 2px solid #0D47A1;
+  border: 2px solid #000000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -452,9 +609,24 @@ function getSpaceIcon(type: string): string {
   background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
 }
 
-.start-arrow {
-  font-size: calc(var(--corner-size) * 0.32);
-  transform: rotate(-45deg);
+.start-diamond-final {
+  width: calc(var(--corner-size) * 0.3);
+  height: calc(var(--corner-size) * 0.3);
+  background: #1976D2;
+  transform: rotate(45deg);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.25);
+  margin-bottom: 8px;
+  border-radius: 6px;
+  border: 2px solid white;
+}
+
+.start-arrow-final {
+  font-size: calc(var(--corner-size) * 0.2);
+  color: white;
+  transform: rotate(135deg); /* Points Left */
   line-height: 1;
 }
 
@@ -473,26 +645,27 @@ function getSpaceIcon(type: string): string {
 
 /* JUST VISITING corner */
 .corner-content.just-visiting {
-  background: linear-gradient(135deg, #f8f9fa 0%, #e9ecef 100%);
+  background: #000000;
   position: relative;
 }
 
 .jail-box {
   position: absolute;
-  top: 6px;
-  left: 6px;
-  width: calc(var(--corner-size) * 0.42);
-  height: calc(var(--corner-size) * 0.42);
-  background: #ff9f43;
-  border: 2px solid #0D47A1;
+  top: 4px;
+  left: 4px;
+  width: calc(var(--corner-size) * 0.58);
+  height: calc(var(--corner-size) * 0.58);
+  background: #C44601;
+  border: 3px solid #000000;
   display: flex;
   align-items: center;
   justify-content: center;
   font-family: 'Oswald', sans-serif;
-  font-size: calc(var(--corner-size) * 0.11);
+  font-size: calc(var(--corner-size) * 0.13);
   font-weight: 700;
-  color: #0D47A1;
+  color: white;
   box-sizing: border-box;
+  box-shadow: inset 0 0 15px rgba(0,0,0,0.4);
 }
 
 .visiting-label {
@@ -518,11 +691,32 @@ function getSpaceIcon(type: string): string {
   width: var(--space-width);
   height: var(--corner-size);
   background: linear-gradient(180deg, #f8f9fa 0%, #e9ecef 100%);
-  border: 1px solid #0D47A1;
+  border: 1px solid #000000;
   display: flex;
   flex-direction: column;
   position: relative;
   box-sizing: border-box;
+}
+
+.space.destination {
+  background: linear-gradient(0deg, #000000 0%, #0077FF 100%);
+}
+
+/* Side-specific property gradients: Outer Black -> Inner Blue */
+.bottom-row .space.destination {
+  background: linear-gradient(0deg, #000000 0%, #0077FF 100%);
+}
+
+.top-row .space.destination {
+  background: linear-gradient(180deg, #000000 0%, #0077FF 100%);
+}
+
+.left-column .space.destination {
+  background: linear-gradient(90deg, #000000 0%, #0077FF 100%);
+}
+
+.right-column .space.destination {
+  background: linear-gradient(270deg, #000000 0%, #0077FF 100%);
 }
 
 .horizontal-space {
@@ -568,6 +762,7 @@ function getSpaceIcon(type: string): string {
   justify-content: center;
   padding: 2px;
   text-align: center;
+  position: relative; /* Needed for absolute special wrappers */
 }
 
 .horizontal-space .space-content {
@@ -633,7 +828,7 @@ function getSpaceIcon(type: string): string {
   font-family: 'Oswald', sans-serif;
   font-size: calc(var(--space-width) * 0.14);
   font-weight: 600;
-  color: #0D47A1;
+  color: white;
   line-height: 1.1;
   text-transform: uppercase;
 }
@@ -641,8 +836,16 @@ function getSpaceIcon(type: string): string {
 .space-price {
   font-family: 'Roboto', sans-serif;
   font-size: calc(var(--space-width) * 0.11);
-  color: #1565C0;
+  color: #a0c0ff;
   font-weight: 500;
+}
+
+.space:not(.destination) .space-name {
+  color: #0D47A1;
+}
+
+.space:not(.destination) .space-price {
+  color: #1565C0;
 }
 
 
@@ -675,6 +878,165 @@ function getSpaceIcon(type: string): string {
   font-weight: 500;
   color: #37474f;
   text-transform: uppercase;
+}
+
+/* Special Space Redesigns */
+.space.first_class {
+  background: radial-gradient(circle at center, #f5f5f5 0%, #e0e0e0 100%);
+}
+
+/* Standardized Special Content Wrapper */
+.special-content-wrapper {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  position: relative;
+  writing-mode: horizontal-tb !important;
+  overflow: visible; /* Ensure nothing is cut off */
+}
+
+/* Specific rotations for left/right special spaces content - use square wrapping to avoid clipping */
+.left-side .special-content-wrapper,
+.right-side .special-content-wrapper {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  width: var(--corner-size);
+  height: var(--corner-size);
+  z-index: 5;
+}
+
+.left-side .special-content-wrapper {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.right-side .special-content-wrapper {
+  transform: translate(-50%, -50%) rotate(90deg);
+}
+
+.first-class-content, .airport-content, .here-now-content, .chance-content {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 4px;
+  box-sizing: border-box;
+  gap: 2px;
+}
+
+.special-label {
+  font-family: 'Oswald', sans-serif;
+  font-size: calc(var(--space-width) * 0.09);
+  font-weight: 700;
+  color: #333;
+  text-transform: uppercase;
+}
+
+.special-price {
+  font-family: 'Roboto', sans-serif;
+  font-size: calc(var(--space-width) * 0.08);
+  font-weight: 700;
+  color: #333;
+}
+
+/* Elegant First Class Logo v2 */
+.elegant-star-ring-v2 {
+  width: calc(var(--space-width) * 0.5);
+  height: calc(var(--space-width) * 0.5);
+  border: 1.5px solid #FFD700;
+  border-radius: 50%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: white;
+  position: relative;
+  box-shadow: 0 0 8px rgba(255, 215, 0, 0.2);
+}
+
+.elegant-star-ring-v2::after {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  border: 1px solid #FFD54F;
+  border-radius: 50%;
+}
+
+.elegant-star-v2 {
+  font-size: calc(var(--space-width) * 0.3);
+  color: #FFD700;
+  line-height: 1;
+  z-index: 1;
+}
+
+.space.first_class {
+  background: radial-gradient(circle at center, #ffffff 0%, #e0e0e0 100%);
+}
+
+/* Airport simple icon */
+.space.airport {
+  background: #03A9F4;
+}
+
+.space.airport .special-label, .space.airport .special-price {
+  color: white;
+}
+
+.airport-emoji {
+  font-size: calc(var(--space-width) * 0.4);
+  filter: drop-shadow(0 0 2px rgba(0,0,0,0.2));
+}
+
+/* Here & Now (Preserved) */
+.space.here_and_now {
+  background: #cc0000;
+}
+
+.globe-icon-outline {
+  font-size: calc(var(--space-width) * 0.35);
+}
+
+.here-now-text {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  line-height: 1;
+}
+
+.here-now-text span {
+  font-family: 'Oswald', sans-serif;
+  color: white;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.text-here { font-size: calc(var(--space-width) * 0.14); }
+.text-and { font-size: calc(var(--space-width) * 0.1); color: #ddd; }
+.text-now { font-size: calc(var(--space-width) * 0.18); }
+
+/* Chance (Preserved) */
+.space.chance {
+  background: #9c27b0;
+}
+
+.large-question-mark {
+  font-family: 'Oswald', sans-serif;
+  font-size: calc(var(--space-width) * 0.6);
+  color: white;
+  font-weight: 700;
+  line-height: 1;
+}
+
+.chance-label {
+  font-family: 'Oswald', sans-serif;
+  font-size: calc(var(--space-width) * 0.1);
+  color: white;
+  font-weight: 400;
+  letter-spacing: 1px;
 }
 
 /* Board center - Rigid container for passports */
@@ -748,73 +1110,38 @@ function getSpaceIcon(type: string): string {
   box-shadow: 0 10px 25px rgba(0,0,0,0.4);
 }
 
-/* Logo in center */
-.center-logo {
+/* Decks in center */
+.card-deck {
+  position: absolute;
+  width: calc(var(--board-size) * 0.12);
+  height: calc(var(--board-size) * 0.18);
   display: flex;
-  flex-direction: column;
   align-items: center;
-  z-index: 10;
+  justify-content: center;
+  z-index: 2;
 }
 
-.globe-container {
-  width: calc((var(--board-size) - 2 * var(--corner-size)) * 0.12);
-  height: calc((var(--board-size) - 2 * var(--corner-size)) * 0.12);
-  margin-bottom: 8px;
+.chance-deck {
+  top: 50%;
+  right: 18%;
+  transform: translate(50%, -50%); /* Removed rotation to make it vertical */
 }
 
-.globe {
+.here-now-deck {
+  top: 50%;
+  left: 18%;
+  transform: translate(-50%, -50%); /* Removed rotation to make it vertical */
+}
+
+.deck-outline {
   width: 100%;
   height: 100%;
-  border-radius: 50%;
-  background: linear-gradient(135deg, #4fc3f7 0%, #0288d1 50%, #01579b 100%);
-  box-shadow: 
-    inset -8px -8px 16px rgba(0,0,0,0.3),
-    inset 8px 8px 16px rgba(255,255,255,0.2),
-    0 4px 12px rgba(0,0,0,0.3);
-  position: relative;
-}
-
-.globe::before {
-  content: '';
-  position: absolute;
-  inset: 12%;
-  border-radius: 50%;
-  border: 2px dashed rgba(255,255,255,0.35);
-}
-
-.globe::after {
-  content: '';
-  position: absolute;
-  width: 110%;
-  height: 2px;
-  background: rgba(255,255,255,0.35);
-  top: 50%;
-  left: -5%;
-  transform: translateY(-50%);
-}
-
-.logo-text {
-  font-family: 'Oswald', sans-serif;
-  font-size: calc((var(--board-size) - 2 * var(--corner-size)) * 0.065);
-  font-weight: 700;
-  color: #c41e3a;
-  text-shadow: 
-    2px 2px 0 #fff,
-    -1px -1px 0 #fff,
-    1px -1px 0 #fff,
-    -1px 1px 0 #fff;
-  margin: 0;
-  letter-spacing: 3px;
-}
-
-.edition-text {
-  font-family: 'Oswald', sans-serif;
-  font-size: calc((var(--board-size) - 2 * var(--corner-size)) * 0.028);
-  font-weight: 500;
-  color: #0D47A1;
-  margin: 0;
-  letter-spacing: 4px;
-  text-transform: uppercase;
+  border: 2px dashed #ff5252;
+  border-radius: 8px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: transparent; /* Cleaner without background */
 }
 
 /* Responsive adjustments */
