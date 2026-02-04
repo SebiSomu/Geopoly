@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import PassportDemo from './components/PassportDemo.vue'
+import BoardDemo from './components/BoardDemo.vue'
 </script>
 
 <template>
-  <PassportDemo />
+  <BoardDemo />
 </template>
 
 <style>
