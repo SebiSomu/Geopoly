@@ -3,6 +3,7 @@ import { computed } from 'vue'
 import Passport from './Passport.vue'
 import Stamp from './Stamp.vue'
 import GameDice from './GameDice.vue'
+import CardStack from './CardStack.vue'
 
 // Exact stamp colors from Stamp.vue
 const COLORS = {
@@ -281,11 +282,12 @@ function getSpaceIcon(type: string): string {
           </div>
           
           <!-- Deck Placeholders -->
+          <!-- Deck Placeholders -->
           <div class="card-deck chance-deck">
-            <div class="deck-outline"></div>
+            <CardStack type="chance" />
           </div>
           <div class="card-deck here-now-deck">
-            <div class="deck-outline"></div>
+            <CardStack type="here_and_now" />
           </div>
 
           <!-- Dice in the center -->
@@ -1129,14 +1131,14 @@ function getSpaceIcon(type: string): string {
 
 .chance-deck {
   top: 50%;
-  right: 18%;
-  transform: translate(50%, -50%); /* Removed rotation to make it vertical */
+  left: 18%;
+  transform: translate(-50%, -50%);
 }
 
 .here-now-deck {
   top: 50%;
-  left: 18%;
-  transform: translate(-50%, -50%); /* Removed rotation to make it vertical */
+  right: 18%;
+  transform: translate(50%, -50%);
 }
 
 .deck-outline {
