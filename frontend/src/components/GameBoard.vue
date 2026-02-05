@@ -2,6 +2,7 @@
 import { computed } from 'vue'
 import Passport from './Passport.vue'
 import Stamp from './Stamp.vue'
+import GameDice from './GameDice.vue'
 
 // Exact stamp colors from Stamp.vue
 const COLORS = {
@@ -285,6 +286,11 @@ function getSpaceIcon(type: string): string {
           </div>
           <div class="card-deck here-now-deck">
             <div class="deck-outline"></div>
+          </div>
+
+          <!-- Dice in the center -->
+          <div class="dice-container-center">
+            <GameDice :forced-deal="true" />
           </div>
           
           <!-- Passport zone BOTTOM-LEFT -->
@@ -1142,6 +1148,14 @@ function getSpaceIcon(type: string): string {
   align-items: center;
   justify-content: center;
   background: transparent; /* Cleaner without background */
+}
+
+.dice-container-center {
+  z-index: 10;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  pointer-events: none; /* Allow clicks through if needed */
 }
 
 /* Responsive adjustments */
