@@ -4,6 +4,7 @@ import Passport from './Passport.vue'
 import Stamp from './Stamp.vue'
 import GameDice from './GameDice.vue'
 import CardStack from './CardStack.vue'
+import GameToken from './GameToken.vue'
 
 // Exact stamp colors from Stamp.vue
 const COLORS = {
@@ -478,6 +479,14 @@ function getSpaceIcon(type: string): string {
             </div>
             <span class="corner-label start-label">START</span>
             <span class="start-bonus">Collect M200</span>
+            
+            <!-- Game Tokens at Start -->
+            <div class="tokens-at-start">
+              <GameToken type="seal" />
+              <GameToken type="cat" />
+              <GameToken type="capybara" />
+              <GameToken type="dog" />
+            </div>
           </div>
         </div>
       </div>
@@ -649,6 +658,22 @@ function getSpaceIcon(type: string): string {
   font-size: calc(var(--corner-size) * 0.08);
   color: white;
   margin-top: 2px;
+}
+
+.tokens-at-start {
+  position: absolute;
+  bottom: 8px;
+  right: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  width: 50px;
+  gap: 4px;
+  pointer-events: none;
+  z-index: 25;
+}
+
+.tokens-at-start > * {
+  pointer-events: auto;
 }
 
 /* JUST VISITING corner */
