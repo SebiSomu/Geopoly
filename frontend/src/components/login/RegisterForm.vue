@@ -1,5 +1,7 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import { useMutation } from '@vue/apollo-composable';
+import { REGISTER_MUTATION } from '../../graphql/operations';
 
 const emit = defineEmits(['register-success', 'switch-to-login', 'notify']);
 
@@ -7,16 +9,26 @@ const username = ref('');
 const password = ref('');
 const confirmPassword = ref('');
 
+const { mutate: register, onDone, onError } = useMutation(REGISTER_MUTATION);
+
 const handleRegister = () => {
   if (username.value && password.value && password.value === confirmPassword.value) {
-    // Simulate API call
-    setTimeout(() => {
-      emit('register-success');
-    }, 500);
+    register({ username: username.value, password: password.value });
   } else {
     emit('notify', { message: 'Passwords must match and fields cannot be empty', type: 'error' });
   }
 };
+
+onDone((result) => {
+    if (result.data?.register) {
+        localStorage.setItem('username', result.data.register.username);
+        emit('register-success');
+    }
+});
+
+onError((error) => {
+    emit('notify', { message: error.message || 'Registration failed', type: 'error' });
+});
 </script>
 
 <template>

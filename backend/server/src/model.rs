@@ -9,8 +9,7 @@ pub struct User {
     pub id: Option<ObjectId>,
     pub username: String,
     pub password_hash: String,
-    pub created_at: DateTime<Utc>,
-    pub last_login: Option<DateTime<Utc>>,
+    pub created_at: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]
@@ -26,5 +25,5 @@ pub struct Lobby {
     pub code: String,
     pub players: Vec<Player>,
     pub state: String, // "waiting", "playing"
-    pub created_at: DateTime<Utc>,
+    pub created_at: String,
 }

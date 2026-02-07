@@ -528,7 +528,7 @@ function getSpaceIcon(type: string): string {
 }
 
 .board {
-  --board-size: min(92vw, 92vh, 850px);
+  --board-size: min(90vw, 90vh, 750px);
   --corner-size: calc(var(--board-size) * 0.115);
   --space-width: calc((var(--board-size) - 2 * var(--corner-size)) / 9);
   --space-height: var(--corner-size);

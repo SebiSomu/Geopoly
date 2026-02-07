@@ -40,8 +40,7 @@ impl MutationRoot {
             id: None,
             username: username.clone(),
             password_hash: password, // TODO: Hash this
-            created_at: Utc::now(),
-            last_login: None,
+            created_at: Utc::now().to_rfc3339(),
         };
 
         // Note: MongoDB driver 2.8.2 uses insert_one(doc, options)
@@ -63,13 +62,6 @@ impl MutationRoot {
                     return Err(Error::new("Invalid password"));
                 }
                 
-                user.last_login = Some(Utc::now());
-                db.users().update_one(
-                    doc! { "_id": user.id },
-                    doc! { "$set": { "last_login": user.last_login } },
-                    None
-                ).await?;
-                
                 Ok(user)
             },
             None => Err(Error::new("User not found"))
@@ -86,7 +78,7 @@ impl MutationRoot {
             code: code.clone(),
             players: vec![Player { username, character: None }],
             state: "waiting".to_string(),
-            created_at: Utc::now(),
+            created_at: Utc::now().to_rfc3339(),
         };
 
         let result = db.lobbies().insert_one(new_lobby.clone(), None).await?;

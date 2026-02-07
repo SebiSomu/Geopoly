@@ -41,6 +41,10 @@ const { result } = useQuery(GET_LOBBY_QUERY, () => ({
 const lobbyState = computed(() => result.value?.getLobby);
 const players = computed(() => lobbyState.value?.players || []);
 
+const allPlayersReady = computed(() => {
+    return players.value.length >= 2 && players.value.every((p: any) => !!p.character);
+});
+
 const handleCreate = () => {
     error.value = '';
     // Explicitly casting variables if needed, though usually automatic
@@ -111,24 +115,24 @@ const startGame = () => {
 
             <div v-if="!isInLobby" class="actions">
                 <div class="action-box">
-                    <h2>CREATE NEW GAME</h2>
-                    <p>Host a game and invite your friends.</p>
-                    <button class="action-btn" @click="handleCreate">CREATE LOBBY</button>
+                    <h2>CREATE</h2>
+                    <p>New Game</p>
+                    <button class="action-btn" @click="handleCreate">CREATE</button>
                 </div>
                 
                 <div class="divider">OR</div>
 
                 <div class="action-box">
-                    <h2>JOIN GAME</h2>
-                    <p>Enter the 6-character code.</p>
+                    <h2>JOIN</h2>
+                    <p>Enter Code</p>
                     <input v-model="inputCode" placeholder="ABC123" maxlength="6" class="code-input" />
-                    <button class="action-btn" @click="handleJoin">JOIN LOBBY</button>
+                    <button class="action-btn" @click="handleJoin">JOIN</button>
                 </div>
             </div>
 
             <div v-else class="lobby-room">
                 <div class="room-header">
-                    <span>ROOM CODE:</span>
+                    <span>CODE:</span>
                     <span class="code-display">{{ lobbyCode }}</span>
                 </div>
 
@@ -137,17 +141,14 @@ const startGame = () => {
                     <ul>
                         <li v-for="player in players" :key="player.username" :class="{ 'self': player.username === username }">
                             <span class="p-name">{{ player.username }}</span>
-                            <span class="p-status" v-if="player.character">
-                                <!-- Small preview icon could go here if needed -->
-                                Ready
-                            </span>
-                            <span class="p-status waiting" v-else>Thinking...</span>
+                            <span class="p-status ready" v-if="player.character">Ready</span>
+                            <span class="p-status waiting" v-else>Selecting...</span>
                         </li>
                     </ul>
                 </div>
 
                 <div class="char-selection">
-                    <h3>CHOOSE YOUR PIECE</h3>
+                    <h3>CHOOSE PIECE</h3>
                     <div class="char-bar">
                         <CharacterSelection 
                             v-for="char in characters"
@@ -160,7 +161,11 @@ const startGame = () => {
                     </div>
                 </div>
 
-                <button class="start-game-btn" @click="startGame" :disabled="players.length < 2">
+                <div class="start-hint" v-if="!allPlayersReady && players.length >= 2">
+                    Waiting for everyone to pick a character...
+                </div>
+
+                <button class="start-game-btn" @click="startGame" :disabled="!allPlayersReady">
                     START GAME
                 </button>
             </div>
@@ -199,19 +204,19 @@ const startGame = () => {
     z-index: 10;
     background: rgba(0, 0, 0, 0.6);
     backdrop-filter: blur(10px);
-    padding: 40px;
+    padding: 25px;
     border-radius: 20px;
     border: 1px solid rgba(255, 255, 255, 0.1);
     text-align: center;
-    width: 600px;
+    width: 440px;
     box-shadow: 0 0 30px rgba(138, 43, 226, 0.2);
 }
 
 .lobby-title {
-    font-size: 3rem;
+    font-size: 2rem;
     font-weight: 900;
     letter-spacing: 5px;
-    margin-bottom: 20px;
+    margin-bottom: 15px;
     text-shadow: 0 0 10px rgba(138, 43, 226, 0.8);
 }
 
@@ -219,38 +224,50 @@ const startGame = () => {
     display: flex;
     justify-content: space-between;
     align-items: center;
-    gap: 20px;
+    gap: 15px;
 }
 
 .action-box {
     flex: 1;
     background: rgba(255, 255, 255, 0.05);
-    padding: 20px;
+    padding: 15px;
     border-radius: 10px;
+}
+
+.action-box h2 {
+    font-size: 1rem;
+    margin-bottom: 5px;
+}
+
+.action-box p {
+    font-size: 0.8rem;
+    opacity: 0.7;
+    margin-bottom: 10px;
 }
 
 .divider {
     font-weight: bold;
     color: #888;
+    font-size: 0.8rem;
 }
 
 .code-input {
     background: rgba(0, 0, 0, 0.5);
     border: 1px solid #444;
     color: white;
-    padding: 10px;
+    padding: 8px;
     border-radius: 5px;
-    font-size: 1.2rem;
+    font-size: 1rem;
     text-align: center;
     width: 100%;
     margin-bottom: 15px;
     text-transform: uppercase;
-    letter-spacing: 3px;
+    letter-spacing: 2px;
 }
 
 .action-btn {
     width: 100%;
-    padding: 12px;
+    padding: 10px;
     background: linear-gradient(45deg, #8a2be2, #4b0082);
     border: none;
     color: white;
@@ -258,6 +275,7 @@ const startGame = () => {
     cursor: pointer;
     border-radius: 5px;
     transition: transform 0.2s;
+    font-size: 0.9rem;
 }
 
 .action-btn:hover {
@@ -270,11 +288,12 @@ const startGame = () => {
     background: rgba(255, 0, 0, 0.1);
     padding: 10px;
     border-radius: 5px;
+    font-size: 0.8rem;
 }
 
 .room-header {
-    margin-bottom: 30px;
-    font-size: 1.5rem;
+    margin-bottom: 20px;
+    font-size: 1.2rem;
 }
 
 .code-display {
@@ -282,40 +301,58 @@ const startGame = () => {
     font-weight: bold;
     color: #8a2be2;
     margin-left: 10px;
-    font-size: 2rem;
+    font-size: 1.6rem;
     letter-spacing: 2px;
+}
+
+.players-list h3, .char-selection h3 {
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+    opacity: 0.8;
 }
 
 .players-list ul {
     list-style: none;
     padding: 0;
     text-align: left;
+    margin-bottom: 20px;
 }
 
 .players-list li {
-    padding: 10px;
+    padding: 8px 12px;
     background: rgba(255, 255, 255, 0.05);
     margin-bottom: 5px;
     border-radius: 5px;
     display: flex;
     justify-content: space-between;
+    font-size: 0.9rem;
 }
 
+.p-status.ready { color: #00ff88; font-weight: bold; }
+.p-status.waiting { color: #aaa; font-style: italic; }
+
 .players-list li.self {
-    border: 1px solid #8a2be2;
+    border: 1px solid rgba(138, 43, 226, 0.5);
+    background: rgba(138, 43, 226, 0.1);
 }
 
 .char-bar {
     display: flex;
     justify-content: center;
-    gap: 20px;
-    margin-top: 20px;
+    gap: 15px;
+    margin-top: 10px;
+}
+
+.start-hint {
+    margin-top: 15px;
+    font-size: 0.8rem;
+    color: #ffb800;
 }
 
 .start-game-btn {
-    margin-top: 30px;
-    padding: 15px 50px;
-    font-size: 1.2rem;
+    margin-top: 20px;
+    padding: 12px 40px;
+    font-size: 1.1rem;
     background: linear-gradient(to right, #00c6ff, #0072ff);
     border: none;
     color: white;
@@ -327,10 +364,10 @@ const startGame = () => {
 }
 
 .start-game-btn:disabled {
-    background: #555;
+    background: #444;
     cursor: not-allowed;
     box-shadow: none;
-    opacity: 0.7;
+    opacity: 0.5;
 }
 
 .start-game-btn:not(:disabled):hover {

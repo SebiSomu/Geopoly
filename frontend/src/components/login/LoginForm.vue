@@ -1,21 +1,33 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import { useMutation } from '@vue/apollo-composable';
+import { LOGIN_MUTATION } from '../../graphql/operations';
 
 const emit = defineEmits(['login-success', 'switch-to-register', 'notify']);
 
 const username = ref('');
 const password = ref('');
 
+const { mutate: login, onDone, onError } = useMutation(LOGIN_MUTATION);
+
 const handleLogin = () => {
   if (username.value && password.value) {
-    // Simulate API call
-    setTimeout(() => {
-      emit('login-success');
-    }, 500);
+    login({ username: username.value, password: password.value });
   } else {
     emit('notify', { message: 'Please enter both username and password', type: 'error' });
   }
 };
+
+onDone((result) => {
+    if (result.data?.login) {
+        localStorage.setItem('username', result.data.login.username);
+        emit('login-success');
+    }
+});
+
+onError((error) => {
+    emit('notify', { message: error.message || 'Login failed', type: 'error' });
+});
 </script>
 
 <template>

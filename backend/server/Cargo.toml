@@ -8,7 +8,8 @@ async-graphql = { version = "5.0.10", features = ["bson", "chrono"] }
 async-graphql-axum = "5.0.10"
 axum = "0.6.20"
 tokio = { version = "1.28", features = ["full"] } # Tokio 1.x is stable
-mongodb = "2.8.0" # Sticking to 2.8 which we know fits
+mongodb = "2.8.2"
+bson = { version = "2.8.2", features = ["chrono-0_4"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tower-http = { version = "0.4.0", features = ["cors"] } # Tower-http 0.4 fits Axum 0.6
