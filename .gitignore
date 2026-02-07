@@ -1,0 +1,27 @@
+# Backend - Rust
+backend/target/
+backend/server/target/
+backend/game-engine/target/
+**/*.rs.bk
+Cargo.lock
+
+# Frontend - Node/Vue
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Environment
+.env
+.env.*
+!.env.example

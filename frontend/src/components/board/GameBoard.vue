@@ -1,10 +1,30 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import { useQuery } from '@vue/apollo-composable'
+import { GET_LOBBY_QUERY } from '../../graphql/operations'
 import Passport from './Passport.vue'
 import Stamp from './Stamp.vue'
 import GameDice from './GameDice.vue'
 import CardStack from './CardStack.vue'
 import GameToken from './GameToken.vue'
+
+const props = defineProps<{
+  code: string
+}>()
+
+// Fetch lobby data to get players and their characters
+const { result } = useQuery(GET_LOBBY_QUERY, () => ({
+  code: props.code
+}), {
+  pollInterval: 2000 // Poll every 2 seconds to keep sync
+});
+
+const players = computed(() => result.value?.getLobby?.players || []);
+
+// Filter players who have selected a character
+const activeTokens = computed(() => {
+  return players.value.filter((p: any) => p.character).map((p: any) => p.character);
+});
 
 // Exact stamp colors from Stamp.vue
 const COLORS = {
@@ -482,10 +502,11 @@ function getSpaceIcon(type: string): string {
             
             <!-- Game Tokens at Start -->
             <div class="tokens-at-start">
-              <GameToken type="seal" />
-              <GameToken type="cat" />
-              <GameToken type="capybara" />
-              <GameToken type="dog" />
+              <GameToken 
+                v-for="tokenType in activeTokens" 
+                :key="tokenType" 
+                :type="tokenType" 
+              />
             </div>
           </div>
         </div>

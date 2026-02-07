@@ -1,12 +1,15 @@
 <script setup lang="ts">
 import { ref } from 'vue';
+import { useRouter } from 'vue-router';
 import LoginForm from './LoginForm.vue';
 import RegisterForm from './RegisterForm.vue';
 import Footer from './Footer.vue';
 import Notification from './Notification.vue';
 
-const emit = defineEmits(['start-game']);
+// Remove emit
+// const emit = defineEmits(['start-game']);
 
+const router = useRouter();
 const viewState = ref<'start' | 'login' | 'register'>('start');
 const notification = ref<{ message: string; type: 'error' | 'success' | 'info' } | null>(null);
 
@@ -23,13 +26,17 @@ const showStart = () => {
 }
 
 const handleLoginSuccess = () => {
-    notification.value = { message: 'WELCOME TO THE GAME!', type: 'success' };
-    setTimeout(() => emit('start-game'), 1000);
+    notification.value = { message: 'WELCOME BACK!', type: 'success' };
+    setTimeout(() => {
+        router.push({ name: 'Lobby' });
+    }, 1000);
 };
 
 const handleRegisterSuccess = () => {
     notification.value = { message: 'ACCOUNT CREATED!', type: 'success' };
-    setTimeout(() => emit('start-game'), 1000);
+    setTimeout(() => {
+        router.push({ name: 'Lobby' });
+    }, 1000);
 }
 
 const handleNotify = (payload: { message: string; type: 'error' | 'success' | 'info' }) => {

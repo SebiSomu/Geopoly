@@ -1,20 +1,32 @@
 <script setup lang="ts">
-import { ref } from 'vue';
-import GameBoard from './components/board/GameBoard.vue';
-import StartScreen from './components/login/StartScreen.vue';
-
-const gameStarted = ref(false);
-
-const startGame = () => {
-  gameStarted.value = true;
-};
 </script>
 
 <template>
-  <StartScreen v-if="!gameStarted" @start-game="startGame" />
-  <GameBoard v-else />
+  <router-view v-slot="{ Component }">
+    <transition name="fade" mode="out-in">
+      <component :is="Component" />
+    </transition>
+  </router-view>
 </template>
 
+<style>
+body {
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  background-color: black;
+}
+
+.fade-enter-active,
+.fade-leave-active {
+  transition: opacity 0.3s ease;
+}
+
+.fade-enter-from,
+.fade-leave-to {
+  opacity: 0;
+}
+</style>
 <style>
 body {
   margin: 0;
