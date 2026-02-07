@@ -1,8 +1,5 @@
 <script setup lang="ts">
-/**
- * Passport.vue - Realistic single-page passport with 2 columns
- * Uses Composition API with TypeScript
- */
+
 import { ref, computed } from 'vue';
 import Stamp from './Stamp.vue';
 import type { StampColor } from './Stamp.vue';
