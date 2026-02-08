@@ -522,13 +522,14 @@ function getSpaceIcon(type: string): string {
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 20px;
+  padding: 5px 15px 40px 15px; /* Shifting board up by adding more bottom padding */
   min-height: 100vh;
-  background: linear-gradient(135deg, #0a1628 0%, #0d2137 50%, #0a1628 100%);
+  background: #0a1628;
+  box-sizing: border-box;
 }
 
 .board {
-  --board-size: min(90vw, 90vh, 750px);
+  --board-size: min(90vw, 88vh, 750px);
   --corner-size: calc(var(--board-size) * 0.115);
   --space-width: calc((var(--board-size) - 2 * var(--corner-size)) / 9);
   --space-height: var(--corner-size);
@@ -550,12 +551,11 @@ function getSpaceIcon(type: string): string {
       #1e3c78 90%,
       #2659FF 100%
     );
-  border: 5px solid #000000;
-  border-radius: 6px;
+  border: 4px solid #000000;
+  border-radius: 8px;
   box-shadow: 
-    0 0 0 10px #000000,
-    0 0 0 12px #101010,
-    0 25px 80px rgba(0, 0, 0, 0.8),
+    0 0 0 8px #000000,
+    0 15px 50px rgba(0, 0, 0, 0.9),
     inset 0 0 60px rgba(255, 255, 255, 0.05);
   overflow: hidden;
 }
@@ -613,6 +613,7 @@ function getSpaceIcon(type: string): string {
   justify-content: center;
   flex-shrink: 0;
   box-sizing: border-box;
+  position: relative;
 }
 
 .corner-content {
@@ -683,14 +684,20 @@ function getSpaceIcon(type: string): string {
 
 .tokens-at-start {
   position: absolute;
-  bottom: 8px;
-  right: 8px;
-  display: flex;
-  flex-wrap: wrap;
-  width: 50px;
-  gap: 4px;
+  top: 48%; /* Slightly above center to avoid covering bonus text */
+  left: 45%; /* Shifted left as requested */
+  transform: translate(-50%, -50%) scale(0.9);
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  grid-auto-flow: column; /* This puts player 1 & 2 in left column, 3 & 4 in right */
+  width: 65px;
+  height: 65px;
+  gap: 2px 10px; /* Big horizontal gap between columns */
   pointer-events: none;
   z-index: 25;
+  align-items: center;
+  justify-items: center;
 }
 
 .tokens-at-start > * {
@@ -1113,51 +1120,51 @@ function getSpaceIcon(type: string): string {
 }
 
 .zone-top-left {
-  top: 5px;
-  left: 40px;
+  top: 25px;
+  left: 25px;
 }
 .zone-top-left .passport-area {
   position: absolute;
   bottom: 0;
   left: 0;
-  transform: scale(0.26) rotate(135deg);
-  transform-origin: bottom left;
+  transform: translateX(-50%) scale(0.32) rotate(135deg);
+  transform-origin: bottom center;
 }
 
 .zone-top-right {
-  top: 5px;
-  right: 40px;
+  top: 25px;
+  right: 25px;
 }
 .zone-top-right .passport-area {
   position: absolute;
   bottom: 0;
   right: 0;
-  transform: scale(0.26) rotate(-135deg);
-  transform-origin: bottom right;
+  transform: translateX(50%) scale(0.32) rotate(-135deg); /* +50% because right-aligned */
+  transform-origin: bottom center;
 }
 
 .zone-bottom-left {
-  bottom: 40px;
-  left: 1px;
+  bottom: 25px;
+  left: 25px;
 }
 .zone-bottom-left .passport-area {
   position: absolute;
   bottom: 0;
   left: 0;
-  transform: scale(0.26) rotate(45deg);
-  transform-origin: bottom left;
+  transform: translateX(-50%) scale(0.32) rotate(45deg);
+  transform-origin: bottom center;
 }
 
 .zone-bottom-right {
-  bottom: 40px;
-  right: 1px;
+  bottom: 25px;
+  right: 25px;
 }
 .zone-bottom-right .passport-area {
   position: absolute;
   bottom: 0;
   right: 0;
-  transform: scale(0.26) rotate(-45deg);
-  transform-origin: bottom right;
+  transform: translateX(50%) scale(0.32) rotate(-45deg); /* +50% because right-aligned */
+  transform-origin: bottom center;
 }
 
 .passport-area {

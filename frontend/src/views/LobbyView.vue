@@ -6,7 +6,8 @@ import {
     CREATE_LOBBY_MUTATION, 
     JOIN_LOBBY_MUTATION, 
     SELECT_CHARACTER_MUTATION, 
-    GET_LOBBY_QUERY 
+    GET_LOBBY_QUERY,
+    START_GAME_MUTATION
 } from '../graphql/operations';
 import Footer from '../components/login/Footer.vue';
 import CharacterSelection from '../components/lobby/CharacterSelection.vue';
@@ -29,9 +30,10 @@ const characters = [
 const { mutate: createLobby, onDone: onCreateDone, onError: onCreateError } = useMutation(CREATE_LOBBY_MUTATION);
 const { mutate: joinLobby, onDone: onJoinDone, onError: onJoinError } = useMutation(JOIN_LOBBY_MUTATION);
 const { mutate: selectCharacter } = useMutation(SELECT_CHARACTER_MUTATION);
+const { mutate: startGameMutation } = useMutation(START_GAME_MUTATION);
 
 // Polling for lobby state
-const { result } = useQuery(GET_LOBBY_QUERY, () => ({
+const { result, onResult } = useQuery(GET_LOBBY_QUERY, () => ({
     code: lobbyCode.value
 }), {
     enabled: computed(() => !!lobbyCode.value),
@@ -40,6 +42,15 @@ const { result } = useQuery(GET_LOBBY_QUERY, () => ({
 
 const lobbyState = computed(() => result.value?.getLobby);
 const players = computed(() => lobbyState.value?.players || []);
+const host = computed(() => lobbyState.value?.host || (players.value[0]?.username || ''));
+const isHost = computed(() => host.value === username.value); // Determine if current user is host
+
+// Watch for game start
+onResult((res) => {
+    if (res.data?.getLobby?.state === 'playing') {
+        router.push({ name: 'Game', params: { code: lobbyCode.value } });
+    }
+});
 
 const allPlayersReady = computed(() => {
     return players.value.length >= 2 && players.value.every((p: any) => !!p.character);
@@ -99,7 +110,12 @@ const handleSelectChar = (charId: string) => {
 };
 
 const startGame = () => {
-    router.push({ name: 'Game', params: { code: lobbyCode.value } });
+    if (startGameMutation) {
+        startGameMutation({
+            code: lobbyCode.value,
+            username: username.value
+        }).catch(err => error.value = err.message);
+    }
 };
 
 </script>
@@ -140,7 +156,10 @@ const startGame = () => {
                     <h3>PLAYERS ({{ players.length }}/4)</h3>
                     <ul>
                         <li v-for="player in players" :key="player.username" :class="{ 'self': player.username === username }">
-                            <span class="p-name">{{ player.username }}</span>
+                            <span class="p-name">
+                                {{ player.username }}
+                                <span v-if="player.username === host" class="host-crown" title="Lobby Host">👑</span>
+                            </span>
                             <span class="p-status ready" v-if="player.character">Ready</span>
                             <span class="p-status waiting" v-else>Selecting...</span>
                         </li>
@@ -165,9 +184,14 @@ const startGame = () => {
                     Waiting for everyone to pick a character...
                 </div>
 
-                <button class="start-game-btn" @click="startGame" :disabled="!allPlayersReady">
-                    START GAME
-                </button>
+                <div v-if="isHost">
+                    <button class="start-game-btn" @click="startGame" :disabled="!allPlayersReady">
+                        START GAME
+                    </button>
+                </div>
+                <div v-else class="waiting-host-msg">
+                    Waiting for host to start the game...
+                </div>
             </div>
         </div>
 
@@ -373,5 +397,23 @@ const startGame = () => {
 .start-game-btn:not(:disabled):hover {
     transform: translateY(-2px);
     box-shadow: 0 5px 25px rgba(0, 114, 255, 0.6);
+}
+
+.host-crown {
+    margin-left: 5px;
+    font-size: 1.2rem;
+}
+
+.waiting-host-msg {
+    margin-top: 20px;
+    font-style: italic;
+    color: #aaa;
+    animation: pulse 2s infinite;
+}
+
+@keyframes pulse {
+    0% { opacity: 0.6; }
+    50% { opacity: 1; }
+    100% { opacity: 0.6; }
 }
 </style>

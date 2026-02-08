@@ -14,6 +14,12 @@ const viewState = ref<'start' | 'login' | 'register'>('start');
 const notification = ref<{ message: string; type: 'error' | 'success' | 'info' } | null>(null);
 
 const showLogin = () => {
+  const savedUser = localStorage.getItem('username');
+  if (savedUser) {
+      // Auto-login
+      router.push({ name: 'Lobby' });
+      return;
+  }
   viewState.value = 'login';
 };
 

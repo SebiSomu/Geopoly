@@ -14,7 +14,7 @@ body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background-color: black;
+  background-color: #0a1628; /* Monopoly dark blue */
 }
 
 .fade-enter-active,
@@ -25,13 +25,5 @@ body {
 .fade-enter-from,
 .fade-leave-to {
   opacity: 0;
-}
-</style>
-<style>
-body {
-  margin: 0;
-  padding: 0;
-  overflow: hidden;
-  background-color: black; /* Ensure background matches when components load */
 }
 </style>

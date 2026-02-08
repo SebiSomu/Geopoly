@@ -24,6 +24,7 @@ export const CREATE_LOBBY_MUTATION = gql`
       id
       code
       state
+      host
       players {
         username
         character
@@ -38,6 +39,7 @@ export const JOIN_LOBBY_MUTATION = gql`
       id
       code
       state
+      host
       players {
         username
         character
@@ -49,7 +51,6 @@ export const JOIN_LOBBY_MUTATION = gql`
 export const SELECT_CHARACTER_MUTATION = gql`
   mutation SelectCharacter($code: String!, $username: String!, $character: String!) {
     selectCharacter(code: $code, username: $username, character: $character) {
-      id
       code
       players {
         username
@@ -57,7 +58,16 @@ export const SELECT_CHARACTER_MUTATION = gql`
       }
     }
   }
-`
+`;
+
+export const START_GAME_MUTATION = gql`
+  mutation StartGame($code: String!, $username: String!) {
+    startGame(code: $code, username: $username) {
+      code
+      state
+    }
+  }
+`;
 
 export const GET_LOBBY_QUERY = gql`
   query GetLobby($code: String!) {

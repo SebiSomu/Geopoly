@@ -1,5 +1,5 @@
 use async_graphql::{Context, Object, Schema, EmptySubscription, Result, Error};
-use crate::db::DB;
+use crate::database::DB;
 use crate::model::{User, Lobby, Player};
 use mongodb::bson::doc;
 use chrono::Utc;
@@ -21,7 +21,7 @@ impl QueryRoot {
     
     async fn me(&self, ctx: &Context<'_>, username: String) -> Result<Option<User>> {
          let db = ctx.data::<DB>()?;
-         db.find_user_by_username(&username).await.map_err(|e| e.into())
+         Ok(db.find_user_by_username(&username).await?)
     }
 }
 
@@ -76,7 +76,8 @@ impl MutationRoot {
         let new_lobby = Lobby {
             id: None,
             code: code.clone(),
-            players: vec![Player { username, character: None }],
+            players: vec![Player { username: username.clone(), character: None }],
+            host: username,
             state: "waiting".to_string(),
             created_at: Utc::now().to_rfc3339(),
         };
@@ -149,6 +150,33 @@ impl MutationRoot {
             Ok(lobby)
         } else {
             Err(Error::new("Lobby not found"))
+        }
+    }
+
+    async fn start_game(&self, ctx: &Context<'_>, code: String, username: String) -> Result<Lobby> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+
+        if let Some(mut lobby) = lobby_opt {
+            if lobby.host != username {
+                return Err(Error::new("Only host can start the game"));
+            }
+
+            if lobby.players.len() < 2 {
+                return Err(Error::new("Need at least 2 players to start"));
+            }
+            
+            lobby.state = "playing".to_string();
+
+            db.lobbies().update_one(
+                doc! { "_id": lobby.id },
+                doc! { "$set": { "state": "playing" } },
+                None
+            ).await?;
+
+            Ok(lobby)
+        } else {
+             Err(Error::new("Lobby not found"))
         }
     }
 }

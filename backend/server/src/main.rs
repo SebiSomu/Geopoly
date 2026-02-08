@@ -7,12 +7,12 @@ use axum::{
     Router,
     Server,
 };
-use db::DB;
+use database::DB;
 use schema::{MonopolySchema, MutationRoot, QueryRoot};
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
 
-mod db;
+mod database;
 mod model;
 mod schema;
 

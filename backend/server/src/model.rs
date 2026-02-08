@@ -1,7 +1,6 @@
 use serde::{Deserialize, Serialize};
 use async_graphql::SimpleObject;
 use mongodb::bson::oid::ObjectId;
-use chrono::{DateTime, Utc};
 
 #[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]
 pub struct User {
@@ -24,6 +23,8 @@ pub struct Lobby {
     pub id: Option<ObjectId>,
     pub code: String,
     pub players: Vec<Player>,
+    #[serde(default)]
+    pub host: String, // Username of the host
     pub state: String, // "waiting", "playing"
     pub created_at: String,
 }
