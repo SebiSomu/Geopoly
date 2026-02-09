@@ -1,11 +1,12 @@
 use rand::seq::SliceRandom;
 use rand::thread_rng;
+use serde::{Serialize, Deserialize};
 
 // ============================================================================
 // CHANCE CARDS (Șansă)
 // ============================================================================
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ChanceCardAction {
     StealStampAndPay,                    // Ia ultima ștampilă a unui jucător, dar plătește-i valoarea integrală
     PayHospital,                         // Plătește M200 pentru spitalizare
@@ -21,16 +22,17 @@ pub enum ChanceCardAction {
     GetOutOfJailFree,                    // Ieșire gratis din închisoare
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChanceCard {
     pub description: String,
     pub action: ChanceCardAction,
     pub can_keep: bool, // Doar "Get Out of Jail Free" poate fi păstrat
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ChanceDeck {
-    cards: Vec<ChanceCard>,
-    discard_pile: Vec<ChanceCard>,
+    pub cards: Vec<ChanceCard>,
+    pub discard_pile: Vec<ChanceCard>,
 }
 
 impl ChanceDeck {
@@ -143,7 +145,7 @@ impl ChanceDeck {
 // HERE & NOW CARDS
 // ============================================================================
 
-#[derive(Debug, Clone, PartialEq)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum HereAndNowCardAction {
     InterceptPurchase,                   // Când un alt jucător cumpără un loc, cumpără-l tu
     SayNo,                               // Contracărează acțiunile unui jucător împotriva ta (x3)
@@ -158,15 +160,16 @@ pub enum HereAndNowCardAction {
     CollectTax,                          // Colectează o taxă de turist în loc să plătești
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HereAndNowCard {
     pub description: String,
     pub action: HereAndNowCardAction,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct HereAndNowDeck {
-    cards: Vec<HereAndNowCard>,
-    discard_pile: Vec<HereAndNowCard>,
+    pub cards: Vec<HereAndNowCard>,
+    pub discard_pile: Vec<HereAndNowCard>,
 }
 
 impl HereAndNowDeck {

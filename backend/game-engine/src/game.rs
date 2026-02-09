@@ -5,14 +5,34 @@ use crate::passport::Stamp;
 use colored::*;
 use rand::Rng;
 use std::io::{self, Write};
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum DiceResult {
     Normal(u8, u8),
     Double(u8),
-    BusinessDeal
+    BusinessDeal(u8)
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
+pub enum GameStep {
+    WaitingForRoll,
+    WaitingForForcedDeal,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TurnResult {
+    pub die1: u8,
+    pub die2: u8,
+    pub is_double: bool,
+    pub is_forced_deal: bool,
+    pub new_position: u8,
+    pub went_to_jail: bool,
+    pub turn_ends: bool,
+    pub current_player_index: u8,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Game {
     pub board: Board,
     pub players: Vec<Player>,
@@ -21,7 +41,9 @@ pub struct Game {
     pub here_and_now_deck: HereAndNowDeck,
     pub first_class_stamps_available: u8,
     pub turn_number: u32,
-    pub game_over: bool
+    pub game_over: bool,
+    pub step: GameStep,
+    pub last_dice: Option<(u8, u8)>,
 }
 
 impl Game {
@@ -49,201 +71,267 @@ impl Game {
             here_and_now_deck,
             first_class_stamps_available: 20,
             turn_number: 1,
-            game_over: false
+            game_over: false,
+            step: GameStep::WaitingForRoll,
+            last_dice: None,
         }
     }
 
-    pub fn play(&mut self) {
-        while !self.game_over {
-            // Afișăm numărul turei doar la începutul fiecărui ciclu (când joacă primul jucător)
-            if self.current_player_idx == 0 {
-                println!("\n{}", "=".repeat(60).on_bright_blue().white());
-                println!("{}  ÎNCEPE TURA GLOBALĂ #{}  {}", "🌍".yellow(), self.turn_number, "🌍".yellow());
-                println!("{}", "=".repeat(60).on_bright_blue().white());
-            }
-
-            let player_name = self.players[self.current_player_idx].name.clone();
-            let in_jail = self.players[self.current_player_idx].in_jail;
-
-            println!("\n{} {}", "Rândul jucătorului:".green().bold(), player_name.yellow().bold());
-
-            self.display_current_player_status();
-
-            // Verificare câștig
-            if self.check_and_handle_win(self.current_player_idx) {
-                break;
-            }
-
-            if in_jail {
-                self.handle_jail_turn();
-            } else {
-                self.take_turn();
-            }
-
-            if self.game_over {
-                break;
-            }
-
-            self.wait_for_enter();
-
-            // Logica de incrementare a turei:
-            // Dacă jucătorul curent este ultimul din listă, înseamnă că tura globală s-a terminat.
-            if self.current_player_idx == self.players.len() - 1 {
-                self.turn_number += 1;
-            }
-
-            // Trecem la următorul jucător
-            self.current_player_idx = (self.current_player_idx + 1) % self.players.len();
+    /// Execută o aruncare de zaruri pentru jucătorul curent
+    pub fn roll_dice(&mut self) -> Result<TurnResult, String> {
+        if self.game_over {
+            return Err("Game is over".to_string());
         }
-    }
+        if self.step != GameStep::WaitingForRoll {
+            return Err("Not waiting for roll".to_string());
+        }
 
-    fn take_turn(&mut self) {
-        let mut doubles_count: u8 = 0;
-        let mut roll_number: u8 = 0;
+        let player_idx = self.current_player_idx;
+        let in_jail = self.players[player_idx].in_jail;
 
-        loop {
-            roll_number += 1;
+        // --- Logică Închisoare ---
+        if in_jail {
+            return self.handle_jail_roll();
+        }
 
-            if roll_number == 1 {
-                println!("\n{}", "Aruncă zarurile...".cyan());
-            } else {
-                println!("\n{}", "Aruncă din nou zarurile (după dublă)...".cyan());
+        // --- Logică Normală ---
+        let dice_result = Self::roll_dice_internal(); // Folosim funcția statică existentă
+        self.display_dice_result(&dice_result);
+
+        match dice_result {
+            DiceResult::BusinessDeal(val) => {
+                let d2 = val;
+                println!("\n{}", "💼 AFACERE FORȚATĂ!".bright_magenta());
+                self.step = GameStep::WaitingForForcedDeal;
+                self.last_dice = Some((1, d2));
+                self.players[player_idx].consecutive_doubles = 0; // Reset doubles on non-double roll
+                
+                Ok(TurnResult {
+                    die1: 1, 
+                    die2: d2, 
+                    is_double: false,
+                    is_forced_deal: true,
+                    new_position: self.players[player_idx].position as u8,
+                    went_to_jail: false,
+                    turn_ends: false, // Așteaptă input
+                    current_player_index: self.current_player_idx as u8,
+                })
             }
+            DiceResult::Normal(d1, d2) => {
+                let total = d1 + d2;
+                self.last_dice = Some((d1, d2));
+                self.move_player(total as i32);
+                self.handle_landing();
+                self.players[player_idx].consecutive_doubles = 0; // Reset doubles
 
-            let dice_result = Self::roll_dice();
-            self.display_dice_result(&dice_result);
+                self.end_turn(); // Tura se termină normal
 
-            match dice_result {
-                DiceResult::BusinessDeal => {
-                    println!(
-                        "\n{}",
-                        "💼 AFACERE FORȚATĂ! Poți schimba ultima stampilă cu a unui adversar!"
-                            .bright_magenta()
-                    );
-                    self.handle_business_deal();
+                Ok(TurnResult {
+                    die1: d1,
+                    die2: d2,
+                    is_double: false,
+                    is_forced_deal: false,
+                    new_position: self.players[player_idx].position as u8,
+                    went_to_jail: false,
+                    turn_ends: true,
+                    current_player_index: self.current_player_idx as u8,
+                })
+            }
+            DiceResult::Double(val) => {
+                let d1 = val;
+                let d2 = val;
+                let total = d1 + d2;
+                self.last_dice = Some((d1, d2));
+                
+                self.players[player_idx].consecutive_doubles += 1;
 
-                    if self.game_over {
-                        return;
-                    }
-                    break; // tura se termină după BusinessDeal
+                if self.players[player_idx].consecutive_doubles >= 3 {
+                    println!("\n{}", "🚫 A TREIA DUBLĂ! Mergi direct la ÎNCHISOARE!".red());
+                    self.players[player_idx].send_to_jail();
+                    self.players[player_idx].consecutive_doubles = 0;
+                    self.end_turn();
+
+                    return Ok(TurnResult {
+                        die1: d1,
+                        die2: d2,
+                        is_double: true,
+                        is_forced_deal: false,
+                        new_position: 10,
+                        went_to_jail: true,
+                        turn_ends: true,
+                        current_player_index: self.current_player_idx as u8,
+                    });
                 }
 
-                DiceResult::Normal(d1, d2) => {
-                    let total = d1 + d2;
-                    self.move_player(total as i32);
-                    self.handle_landing();
+                println!("\n{}", format!("Dublă #{}! Mută {} spații și mai arunci o dată!", self.players[player_idx].consecutive_doubles, total).bright_green());
+                self.move_player(total as i32);
+                self.handle_landing();
 
-                    if self.game_over {
-                        return;
-                    }
-                    break; // fără dublă => tura se termină
-                }
-
-                DiceResult::Double(value) => {
-                    doubles_count += 1;
-
-                    // A treia dublă => direct la închisoare, fără mutare
-                    if doubles_count >= 3 {
-                        println!(
-                            "\n{}",
-                            "🚫 A TREIA DUBLĂ! Mergi direct la ÎNCHISOARE! (tura se termină)"
-                                .red()
-                                .bold()
-                        );
-                        self.players[self.current_player_idx].send_to_jail();
-                        break;
-                    }
-
-                    let total = value * 2;
-                    println!(
-                        "\n{}",
-                        format!(
-                            "Dublă #{}! Mută {} spații și mai arunci o dată!",
-                            doubles_count, total
-                        )
-                            .bright_green()
-                    );
-
-                    self.move_player(total as i32);
-                    self.handle_landing();
-
-                    // dacă a câștigat după mutare, nu mai aruncă
-                    if self.game_over {
-                        return;
-                    }
-
-                    // dacă a ajuns la închisoare din mutare (ex: Go To Jail), tura se oprește
-                    if self.players[self.current_player_idx].in_jail {
-                        println!(
-                            "{}",
-                            "Tura se încheie deoarece ai ajuns la ÎNCHISOARE.".yellow()
-                        );
-                        break;
-                    }
-
-                    // altfel, continuă bucla pentru încă o aruncare
-                    continue;
+                let moved_to_jail = self.players[player_idx].in_jail;
+                if moved_to_jail || self.game_over {
+                    self.end_turn();
+                     Ok(TurnResult {
+                        die1: d1,
+                        die2: d2,
+                        is_double: true,
+                        is_forced_deal: false,
+                        new_position: self.players[player_idx].position as u8,
+                        went_to_jail: moved_to_jail,
+                        turn_ends: true,
+                        current_player_index: self.current_player_idx as u8,
+                    })
+                } else {
+                    // Mai aruncă o dată - NU apelăm end_turn()
+                    Ok(TurnResult {
+                        die1: d1,
+                        die2: d2,
+                        is_double: true,
+                        is_forced_deal: false,
+                        new_position: self.players[player_idx].position as u8,
+                        went_to_jail: false,
+                        turn_ends: false, 
+                        current_player_index: self.current_player_idx as u8,
+                    })
                 }
             }
         }
     }
 
-    fn handle_jail_turn(&mut self) {
-        let player = &mut self.players[self.current_player_idx];
-        player.jail_turns += 1;
+    fn handle_jail_roll(&mut self) -> Result<TurnResult, String> {
+        let player_idx = self.current_player_idx;
+        self.players[player_idx].jail_turns += 1;
 
-        println!("\n{}", "🔒 Ești în ÎNCHISOARE!".red().bold());
-        println!("Opțiuni:");
-        println!("1. Plătește M100 și ieși");
-        if player.get_out_of_jail_free {
-            println!("2. Folosește cartonașul 'Ieșire Gratuită din Închisoare'");
-        }
-        println!("3. Încearcă să dai dublă ({}/ 3 încercări)", player.jail_turns);
+        println!("\n{}", "🔒 Încercare evadare din închisoare...".cyan());
+        
+        // Simplificare: DOAR aruncăm zarurile (fără opțiune de a plăti momentan în API roll)
+        // În viitor am putea adăuga o metodă `pay_jail_fine`
+        
+        let dice_result = Self::roll_dice_internal();
+        self.display_dice_result(&dice_result);
 
-        if player.jail_turns >= 3 {
-            println!("\n{}", "Ai stat 3 ture în închisoare! Trebuie să plătești M100.".yellow());
-            if player.pay_money(100) {
-                println!("{}", "Ai plătit M100. Ești liber!".green());
-                player.release_from_jail();
-                self.take_turn();
-                if self.game_over {
-                    return;
-                }
-            } else {
-                println!("{}", "Nu ai suficienți bani! Dai faliment...".red());
-                self.handle_bankruptcy(self.current_player_idx, None);
-            }
-            return;
-        }
-
-        // Simplificat: aruncăm zarurile automat pentru a încerca dublă
-        println!("\n{}", "Încerci să dai dublă...".cyan());
-        let dice_result = Self::roll_dice();
-
-        if let DiceResult::Double(_) = dice_result {
+        if let DiceResult::Double(val) = dice_result {
             println!("\n{}", "🎉 Ai dat dublă! Ești liber!".bright_green());
-            player.release_from_jail();
-            self.display_dice_result(&dice_result);
+            self.players[player_idx].release_from_jail();
+            self.move_player((val * 2) as i32);
+            self.handle_landing();
+            self.end_turn();
+            
+             Ok(TurnResult {
+                die1: val, die2: val,
+                is_double: true,
+                is_forced_deal: false,
+                new_position: self.players[player_idx].position as u8,
+                went_to_jail: false,
+                turn_ends: true,
+                current_player_index: self.current_player_idx as u8,
+            })
+        } else {
+            let (d1, d2) = match dice_result {
+                DiceResult::Normal(a, b) => (a, b),
+                DiceResult::Double(a) => (a, a), 
+                DiceResult::BusinessDeal(b) => (1, b), 
+            };
+            
+            println!("\n{}", "Nu ai dat dublă.".yellow());
+            
+            if self.players[player_idx].jail_turns >= 3 {
+                 println!("{}", "Ai stat 3 ture! Plătești M100 și ieși automat (sau faliment).".yellow());
+                 if self.players[player_idx].pay_money(100) {
+                     self.players[player_idx].release_from_jail();
+                     // Se mută? Regulile zic că după a 3-a încercare plătești și te muți cu suma zarurilor.
+                     let move_amount = d1 + d2;
+                     self.move_player(move_amount as i32);
+                     self.handle_landing();
+                 } else {
+                     self.handle_bankruptcy(player_idx, None);
+                 }
+            }
+            
+            self.end_turn();
+            
+            Ok(TurnResult {
+                die1: d1, die2: d2,
+                is_double: false,
+                is_forced_deal: false,
+                new_position: self.players[player_idx].position as u8,
+                went_to_jail: true, // Still in jail effectively (or released at end)
+                turn_ends: true,
+                current_player_index: self.current_player_idx as u8,
+            })
+        }
+    }
 
-            if let DiceResult::Double(value) = dice_result {
-                self.move_player((value * 2) as i32);
+    pub fn resolve_forced_deal(&mut self, action: &str) -> Result<TurnResult, String> {
+        if self.step != GameStep::WaitingForForcedDeal {
+            return Err("Not waiting for forced deal".to_string());
+        }
+
+        let player_idx = self.current_player_idx;
+        
+        match action {
+            "sneaky_swap" => {
+                self.handle_business_deal();
+            },
+            "move" => {
+                // Mută cu valoarea de pe die2 (salvată în last_dice)
+                let steps = if let Some((_, d2)) = self.last_dice { d2 as i32 } else { 1 };
+                println!("Ales 'Move': Mută {} spații", steps);
+                self.move_player(steps);
                 self.handle_landing();
             }
-        } else {
-            println!("\n{}", "Nu ai dat dublă. Rămâi în închisoare.".yellow());
+            _ => return Err("Invalid action".to_string())
+        }
+
+        self.step = GameStep::WaitingForRoll;
+        self.end_turn();
+
+        Ok(TurnResult {
+            die1: 0, die2: 0,
+            is_double: false,
+            is_forced_deal: false,
+            new_position: self.players[player_idx].position as u8,
+            went_to_jail: false,
+            turn_ends: true,
+            current_player_index: self.current_player_idx as u8,
+        })
+    }
+
+    fn end_turn(&mut self) {
+        if self.players[self.current_player_idx].consecutive_doubles == 0 || self.players[self.current_player_idx].in_jail {
+             // Logică incrementare tură globală
+            if self.current_player_idx == self.players.len() - 1 {
+                self.turn_number += 1;
+                println!("\n{}", "=".repeat(60).on_bright_blue().white());
+                println!("{}  ÎNCEPE TURA GLOBALĂ #{}  {}", "🌍".yellow(), self.turn_number, "🌍".yellow());
+            }
+            
+            self.current_player_idx = (self.current_player_idx + 1) % self.players.len();
+            self.step = GameStep::WaitingForRoll;
+            
+            println!("\n{} {}", "Rândul jucătorului:".green().bold(), self.players[self.current_player_idx].name.yellow().bold());
+        } 
+        // Dacă are duble consecutive > 0 și nu e în închisoare, RĂMÂNE pe același player (nu apelăm end_turn în roll_dice pt duble)
+    }
+
+
+    // --- Helper intern redenumit pentru claritate ---
+    fn roll_dice_internal() -> DiceResult {
+        let mut rng = rand::thread_rng();
+        let d1 = rng.gen_range(1..=6);
+        let d2 = rng.gen_range(1..=6);
+
+        // Dacă primul zar e 1, e Afacere Forțată (Mr. Monopoly)
+        if d1 == 1 {
+            return DiceResult::BusinessDeal(d2);
+        }
+
+        if d1 == d2 { 
+            DiceResult::Double(d1) 
+        } else { 
+            DiceResult::Normal(d1, d2) 
         }
     }
 
-    fn roll_dice() -> DiceResult {
-        let mut rng = rand::thread_rng();
-        let business_deal_chance = rng.gen_range(1..=12);
-        if business_deal_chance == 1 {
-            return DiceResult::BusinessDeal;
-        }
-        let d1 = rng.gen_range(1..=6);
-        let d2 = rng.gen_range(1..=6);
-        if d1 == d2 { DiceResult::Double(d1) } else { DiceResult::Normal(d1, d2) }
-    }
 
     fn display_dice_result(&self, result: &DiceResult) {
         match result {
@@ -253,8 +341,8 @@ impl Game {
             DiceResult::Double(value) => {
                 println!("🎲🎲 DUBLĂ! {} + {} = {}", value, value, value * 2);
             }
-            DiceResult::BusinessDeal => {
-                println!("💼 AFACERE FORȚATĂ!");
+            DiceResult::BusinessDeal(val) => {
+                println!("💼 AFACERE FORȚATĂ! (1 + {})", val);
             }
         }
     }

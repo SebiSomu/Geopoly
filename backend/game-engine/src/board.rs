@@ -1,6 +1,7 @@
 use std::collections::HashMap;
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Color {
     Brown,
     LightBlue,
@@ -12,7 +13,7 @@ pub enum Color {
     DarkBlue,
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Destination {
     pub id: u8,
     pub name: String,
@@ -22,7 +23,7 @@ pub struct Destination {
     pub stamp_diameter: f32, // în cm
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Space {
     Start,
     Destination(Destination),
@@ -35,6 +36,7 @@ pub enum Space {
     JustVisiting,
 }
 
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Board {
     pub spaces: Vec<Space>,
     pub color_sets: HashMap<Color, Vec<u8>>, // culoare -> lista de ID-uri destinații

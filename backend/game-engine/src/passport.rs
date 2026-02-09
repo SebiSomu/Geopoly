@@ -1,10 +1,11 @@
 use crate::board::Destination;
+use serde::{Serialize, Deserialize};
 
 pub const LEFT_COLUMN_HEIGHT: f32 = 8.0; // cm
 pub const RIGHT_COLUMN_HEIGHT: f32 = 7.0; // cm
 pub const FIRST_CLASS_DIAMETER: f32 = 1.4; // cm
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stamp {
     pub destination_id: Option<u8>, // None pentru Clasa Întâi
     pub diameter: f32,
@@ -29,12 +30,12 @@ impl Stamp {
     }
 }
 
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Passport {
-    left_column: Vec<Stamp>,
-    right_column: Vec<Stamp>,
-    left_height_used: f32,
-    right_height_used: f32,
+    pub left_column: Vec<Stamp>,
+    pub right_column: Vec<Stamp>,
+    pub left_height_used: f32,
+    pub right_height_used: f32,
     pub overflowed: bool
 }
 

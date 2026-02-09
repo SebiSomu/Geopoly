@@ -1,7 +1,8 @@
 use crate::passport::Passport;
 use crate::cards::HereAndNowCard;
+use serde::{Serialize, Deserialize};
 
-#[derive(Debug)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Player {
     pub name: String,
     pub money: u32,
@@ -19,6 +20,8 @@ pub struct Player {
     pub discount_purchase_ready: bool,
     pub collect_tax_ready: bool,
     pub steal_first_class_ready: bool,
+
+    pub consecutive_doubles: u8, // Tracks consecutive doubles for jail rule
 
     pub double_rent_active: bool, // păstrat din vechiul engine (nu strică)
 }
@@ -41,6 +44,7 @@ impl Player {
             collect_tax_ready: false,
             steal_first_class_ready: false,
 
+            consecutive_doubles: 0,
             double_rent_active: false,
         }
     }

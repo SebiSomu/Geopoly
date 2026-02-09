@@ -36,30 +36,10 @@ impl Default for Player {
     }
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]
-pub struct GameState {
-    #[serde(default)]
-    pub current_turn_index: u8,
-    #[serde(default)]
-    pub last_die1: u8,
-    #[serde(default)]
-    pub last_die2: u8,
-    #[serde(default)]
-    pub awaiting_action: bool, // true if player needs to make a choice (e.g., forced deal)
-}
-
-impl Default for GameState {
-    fn default() -> Self {
-        GameState {
-            current_turn_index: 0,
-            last_die1: 1,
-            last_die2: 1,
-            awaiting_action: false,
-        }
-    }
-}
+// GameState struct removed, replaced by game_engine::game::Game
 
 #[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]
+#[graphql(complex)]
 pub struct Lobby {
     #[serde(rename = "_id", skip_serializing_if = "Option::is_none")]
     pub id: Option<ObjectId>,
@@ -69,7 +49,8 @@ pub struct Lobby {
     pub host: String,
     pub state: String, // "waiting", "playing"
     pub created_at: String,
-    #[serde(default)]
-    pub game_state: Option<GameState>,
+    #[serde(default, rename = "game")]
+    #[graphql(skip)] // We will expose this manually via ComplexObject or specific fields
+    pub game: Option<game_engine::game::Game>,
 }
 
