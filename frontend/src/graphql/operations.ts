@@ -75,10 +75,42 @@ export const GET_LOBBY_QUERY = gql`
       id
       code
       state
+      gameState {
+        currentTurnIndex
+        lastDie1
+        lastDie2
+        awaitingAction
+      }
       players {
         username
         character
+        position
+        inJail
+        consecutiveDoubles
       }
+    }
+  }
+`
+
+export const ROLL_DICE_MUTATION = gql`
+  mutation RollDice($code: String!, $username: String!) {
+    rollDice(code: $code, username: $username) {
+      die1
+      die2
+      isDouble
+      isForcedDeal
+      newPosition
+      wentToJail
+      turnEnds
+      currentTurnIndex
+    }
+  }
+`
+
+export const RESOLVE_FORCED_DEAL_MUTATION = gql`
+  mutation ResolveForcedDeal($code: String!, $username: String!, $action: String!) {
+    resolveForcedDeal(code: $code, username: $username, action: $action) {
+      code
     }
   }
 `

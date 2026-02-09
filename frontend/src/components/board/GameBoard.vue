@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import { computed } from 'vue'
-import { useQuery } from '@vue/apollo-composable'
-import { GET_LOBBY_QUERY } from '../../graphql/operations'
+import { computed, reactive, watchEffect } from 'vue'
+import { useQuery, useMutation } from '@vue/apollo-composable'
+import { GET_LOBBY_QUERY, ROLL_DICE_MUTATION, RESOLVE_FORCED_DEAL_MUTATION } from '../../graphql/operations'
 import Passport from './Passport.vue'
 import Stamp from './Stamp.vue'
 import GameDice from './GameDice.vue'
@@ -16,15 +16,77 @@ const props = defineProps<{
 const { result } = useQuery(GET_LOBBY_QUERY, () => ({
   code: props.code
 }), {
-  pollInterval: 2000 // Poll every 2 seconds to keep sync
+  pollInterval: 1000 // Poll every 1 second for faster updates
 });
 
-const players = computed(() => result.value?.getLobby?.players || []);
+const username = localStorage.getItem('username') || '';
 
-// Filter players who have selected a character
-const activeTokens = computed(() => {
-  return players.value.filter((p: any) => p.character).map((p: any) => p.character);
-});
+const { mutate: rollDiceMutation } = useMutation(ROLL_DICE_MUTATION);
+const { mutate: resolveForcedDealMutation } = useMutation(RESOLVE_FORCED_DEAL_MUTATION);
+
+
+
+
+
+// Game simulation state (local representation of server state)
+const gameState = reactive({
+  players: [] as Array<{ 
+    character: 'seal' | 'capybara' | 'cat' | 'dog'; 
+    position: number; 
+    name: string;
+    in_jail: boolean;
+    consecutive_doubles: number;
+  }>,
+  currentTurnIndex: 0,
+  diceValue1: 1,
+  diceValue2: 3,
+  isRolling: false,
+  forcedDealActive: false,
+  isMoving: false,
+  awaitingAction: false
+})
+
+// Sync local state with server data
+watchEffect(() => {
+  if (result.value?.getLobby) {
+    const lobby = result.value.getLobby
+    const serverGameState = lobby.gameState
+    
+    // Sync players
+    if (lobby.players) {
+      // Map server players to local format
+      gameState.players = lobby.players.map((p: any) => ({
+        character: p.character as 'seal' | 'capybara' | 'cat' | 'dog',
+        position: p.position || 0,
+        name: p.username,
+        in_jail: p.inJail || false,
+        consecutive_doubles: p.consecutiveDoubles || 0
+      }))
+    }
+    
+    if (serverGameState) {
+      // Sync turn and dice, BUT only if we are not currently animating a roll ourselves
+      // This prevents jitter if poll comes during animation
+      if (!gameState.isRolling && !gameState.isMoving) {
+        gameState.currentTurnIndex = serverGameState.currentTurnIndex
+        
+        // Only update dice if they changed (avoid random resets)
+        if (serverGameState.lastDie1) gameState.diceValue1 = serverGameState.lastDie1
+        if (serverGameState.lastDie2) gameState.diceValue2 = serverGameState.lastDie2
+        
+        gameState.awaitingAction = serverGameState.awaitingAction
+        gameState.forcedDealActive = serverGameState.awaitingAction // Sync active state
+      }
+    }
+  }
+})
+
+// Computed check if it's my turn
+const isMyTurn = computed(() => {
+  const currentPlayer = gameState.players[gameState.currentTurnIndex]
+  return currentPlayer && currentPlayer.name === username
+})
+
 
 // Exact stamp colors from Stamp.vue
 const COLORS = {
@@ -91,6 +153,198 @@ const boardSpaces: Space[] = [
   { type: 'first_class' },
   { type: 'destination', name: 'Lima', price: 400, tax: 240, color: 'darkblue', id: 1 },
 ]
+
+// Coordinate mapping for all 40 board positions (0-39)
+// Returns {top, left} as percentages relative to the board
+// Tokens should be positioned ON the board fields (outer edge), not in center
+const getSpaceCoordinates = (position: number): { top: string; left: string } => {
+  // Board layout:
+  // Corner size is ~11.5% of board
+  // Each regular space is ~8.56% of board width
+  const cornerPct = 11.5
+  const spaceWidth = (100 - 2 * cornerPct) / 9 // ~8.56%
+  
+  // Token position within a field (centered, near color band)
+  const fieldOffset = 6 // offset from edge in percentage
+  
+  // Position 0: START (bottom-right corner)
+  if (position === 0) {
+    return { top: `${100 - cornerPct / 2}%`, left: `${100 - cornerPct / 2}%` }
+  }
+  
+  // Positions 1-9: Bottom row (right to left, moving towards JAIL)
+  if (position >= 1 && position <= 9) {
+    const spaceIndex = position - 1
+    const leftPos = 100 - cornerPct - spaceIndex * spaceWidth - spaceWidth / 2
+    return {
+      top: `${100 - fieldOffset}%`,
+      left: `${leftPos}%`
+    }
+  }
+  
+  // Position 10: JUST VISITING (bottom-left corner)
+  if (position === 10) {
+    return { top: `${100 - cornerPct / 2}%`, left: `${cornerPct / 2}%` }
+  }
+  
+  // Positions 11-19: Left column (bottom to top)
+  if (position >= 11 && position <= 19) {
+    const spaceIndex = position - 11
+    const topPos = 100 - cornerPct - spaceIndex * spaceWidth - spaceWidth / 2
+    return {
+      top: `${topPos}%`,
+      left: `${fieldOffset}%`
+    }
+  }
+  
+  // Position 20: FREE PARKING (top-left corner)
+  if (position === 20) {
+    return { top: `${cornerPct / 2}%`, left: `${cornerPct / 2}%` }
+  }
+  
+  // Positions 21-29: Top row (left to right)
+  if (position >= 21 && position <= 29) {
+    const spaceIndex = position - 21
+    const leftPos = cornerPct + spaceIndex * spaceWidth + spaceWidth / 2
+    return {
+      top: `${fieldOffset}%`,
+      left: `${leftPos}%`
+    }
+  }
+  
+  // Position 30: GO TO JAIL (top-right corner)
+  if (position === 30) {
+    return { top: `${cornerPct / 2}%`, left: `${100 - cornerPct / 2}%` }
+  }
+  
+  // Positions 31-39: Right column (top to bottom)
+  if (position >= 31 && position <= 39) {
+    const spaceIndex = position - 31
+    const topPos = cornerPct + spaceIndex * spaceWidth + spaceWidth / 2
+    return {
+      top: `${topPos}%`,
+      left: `${100 - fieldOffset}%`
+    }
+  }
+  
+  // Fallback to START
+  return { top: `${100 - cornerPct / 2}%`, left: `${100 - cornerPct / 2}%` }
+}
+
+// Get rotation for token based on board position (facing forward)
+const getSpaceRotation = (position: number): string => {
+  // Bottom row (0 -> 9): Moving West (Start is at the beginning of this journey)
+  if (position >= 0 && position <= 9) return 'rotate(90deg)'
+  // Left column (10 -> 19): Moving North (Change starts AT Jail)
+  if (position >= 10 && position <= 19) return 'rotate(180deg)'
+  // Top row (20 -> 29): Moving East (Change starts AT Free Parking)
+  if (position >= 20 && position <= 29) return 'rotate(270deg)'
+  // Right column (30 -> 39): Moving South (Change starts AT Go To Jail)
+  if (position >= 30 && position <= 39) return 'rotate(0deg)'
+  
+  return 'rotate(0deg)'
+}
+
+// Roll dice function
+const rollDice = async () => {
+  if (!isMyTurn.value || gameState.isRolling || gameState.isMoving || gameState.forcedDealActive) return
+  
+  gameState.isRolling = true
+
+  try {
+    // 1. Start Animation
+    // Simulate rolling animation time
+    const animPromise = new Promise(resolve => setTimeout(resolve, 600))
+    
+    // 2. Call Backend
+    const response = await rollDiceMutation({
+      code: props.code,
+      username: username
+    })
+    
+    // Fix: Access data safely
+    const result = response?.data?.rollDice
+    if (!result) throw new Error("No result from roll")
+
+    await animPromise // Wait for animation time
+    
+    // 3. Update Dice Values
+    gameState.diceValue1 = result.die1
+    gameState.diceValue2 = result.die2
+    gameState.isRolling = false
+    
+    // 4. Handle Movement / Forced Deal
+    if (result.isForcedDeal && !result.wentToJail) {
+      // Delay modal so user sees the handshake icon first
+        gameState.forcedDealActive = true
+    } else {
+      // Small delay to let user see dice values before jumping
+      await new Promise(resolve => setTimeout(resolve, 600))
+      
+      // Move the current player locally (server updated it, but we animate it)
+      await movePlayer(result.newPosition)
+      
+      if (result.wentToJail) {
+        // Maybe show jail notification
+      }
+    }
+  } catch (e) {
+    console.error("Roll failed:", e)
+    gameState.isRolling = false
+  }
+}
+
+// Move player animation
+const movePlayer = async (targetPosition: number) => {
+  const player = gameState.players[gameState.currentTurnIndex]
+  if (!player) return
+  
+  gameState.isMoving = true
+  
+  // Jump directly to the destination
+  player.position = targetPosition
+  
+  // Give a moment for the animation to play out
+  await new Promise(resolve => setTimeout(resolve, 400))
+  
+  gameState.isMoving = false
+}
+
+// Handle Forced Deal choices
+const handleSneakySwap = async () => {
+  try {
+    await resolveForcedDealMutation({
+      code: props.code,
+      username: username,
+      action: 'sneaky_swap'
+    })
+    gameState.forcedDealActive = false
+  } catch (e) {
+    console.error("Swap failed:", e)
+  }
+}
+
+const handleMoveN = async () => {
+  try {
+    await resolveForcedDealMutation({
+      code: props.code,
+      username: username,
+      action: 'move'
+    })
+    gameState.forcedDealActive = false
+    // Manually jump to predicted position (current + die2) to feel responsive
+    // Poll will confirm it shortly
+    const player = gameState.players[gameState.currentTurnIndex]
+    if (player) {
+       player.position = (player.position + gameState.diceValue2) % 40
+    }
+  } catch (e) {
+    console.error("Move failed:", e)
+  }
+}
+
+// Get current player
+const currentPlayer = computed(() => gameState.players[gameState.currentTurnIndex])
 
 // Separate spaces by position on the board
 const bottomRow = computed(() => boardSpaces.slice(1, 10).reverse())
@@ -311,10 +565,46 @@ function getSpaceIcon(type: string): string {
             <CardStack type="here_and_now" />
           </div>
 
-          <!-- Dice in the center -->
+          <!-- Dice in the center with Roll Button -->
           <div class="dice-container-center">
-            <GameDice :forced-deal="true" />
+            <div class="dice-control-panel">
+              <GameDice 
+                :value1="gameState.diceValue1" 
+                :value2="gameState.diceValue2" 
+                :isRolling="gameState.isRolling"
+                :forcedDeal="gameState.diceValue1 === 1"
+              />
+              <button 
+                class="roll-button" 
+                @click="rollDice"
+                :disabled="!isMyTurn || gameState.isRolling || gameState.isMoving || gameState.forcedDealActive"
+              >
+                <span class="roll-icon">🎲</span>
+                <span class="roll-text">ROLL</span>
+              </button>
+              <div v-if="currentPlayer" class="turn-indicator">
+                {{ currentPlayer?.name }}'s Turn <span v-if="isMyTurn">(You)</span>
+              </div>
+            </div>
           </div>
+
+          <!-- Forced Deal Modal -->
+          <div v-if="gameState.forcedDealActive" class="forced-deal-modal">
+            <div class="modal-content">
+              <h3>⚡ Forced Deal!</h3>
+              <p>Choose your action:</p>
+              <div class="modal-buttons">
+                <button class="modal-btn sneaky" @click="handleSneakySwap">
+                  🤝 Sneaky Swap
+                </button>
+                <button class="modal-btn move" @click="handleMoveN">
+                  🚀 Move {{ gameState.diceValue2 }} Spaces
+                </button>
+              </div>
+            </div>
+          </div>
+
+
           
           <!-- Passport zone BOTTOM-LEFT -->
           <div class="passport-zone zone-bottom-left">
@@ -499,17 +789,23 @@ function getSpaceIcon(type: string): string {
             </div>
             <span class="corner-label start-label">START</span>
             <span class="start-bonus">Collect M200</span>
-            
-            <!-- Game Tokens at Start -->
-            <div class="tokens-at-start">
-              <GameToken 
-                v-for="tokenType in activeTokens" 
-                :key="tokenType" 
-                :type="tokenType" 
-              />
-            </div>
           </div>
         </div>
+      </div>
+
+      <!-- Dynamic Token Positioning (on the board fields) -->
+      <div 
+        v-for="(player, idx) in gameState.players" 
+        :key="player.character"
+        class="positioned-token"
+        :style="{
+          top: getSpaceCoordinates(player.position).top,
+          left: getSpaceCoordinates(player.position).left,
+          transform: `translate(-50%, -50%) ${getSpaceRotation(player.position)}`,
+          zIndex: 50 + idx
+        }"
+      >
+        <GameToken :type="player.character" />
       </div>
     </div>
   </div>
@@ -1210,7 +1506,176 @@ function getSpaceIcon(type: string): string {
   display: flex;
   justify-content: center;
   align-items: center;
-  pointer-events: none; /* Allow clicks through if needed */
+  pointer-events: auto;
+}
+
+.dice-control-panel {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 12px;
+  background: rgba(0, 0, 0, 0.7);
+  padding: 16px 20px;
+  border-radius: 16px;
+  border: 2px solid rgba(255, 255, 255, 0.1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
+  backdrop-filter: blur(10px);
+}
+
+.roll-button {
+  background: linear-gradient(135deg, #ff6b6b 0%, #ee5a5a 100%);
+  border: none;
+  border-radius: 12px;
+  padding: 10px 24px;
+  font-family: 'Oswald', sans-serif;
+  font-size: 18px;
+  font-weight: 700;
+  color: white;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 15px rgba(255, 107, 107, 0.4);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.roll-button:hover:not(:disabled) {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(255, 107, 107, 0.6);
+  background: linear-gradient(135deg, #ff7b7b 0%, #ff6a6a 100%);
+}
+
+.roll-button:active:not(:disabled) {
+  transform: translateY(0);
+}
+
+.roll-button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+
+.roll-icon {
+  font-size: 22px;
+  line-height: 1;
+}
+
+.roll-text {
+  line-height: 1;
+}
+
+.turn-indicator {
+  font-family: 'Roboto', sans-serif;
+  font-size: 14px;
+  color: #fff;
+  background: rgba(255, 255, 255, 0.1);
+  padding: 6px 12px;
+  border-radius: 8px;
+  text-align: center;
+  font-weight: 500;
+}
+
+/* Forced Deal Modal */
+.forced-deal-modal {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.85);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 100;
+  backdrop-filter: blur(8px);
+  animation: fadeIn 0.3s ease;
+}
+
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to { opacity: 1; }
+}
+
+.modal-content {
+  background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+  padding: 32px;
+  border-radius: 20px;
+  border: 3px solid #ffd700;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.9);
+  text-align: center;
+  animation: slideIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+@keyframes slideIn {
+  from { transform: scale(0.8) translateY(-30px); opacity: 0; }
+  to { transform: scale(1) translateY(0); opacity: 1; }
+}
+
+.modal-content h3 {
+  font-family: 'Oswald', sans-serif;
+  font-size: 28px;
+  color: #ffd700;
+  margin: 0 0 12px 0;
+  text-transform: uppercase;
+  letter-spacing: 2px;
+}
+
+.modal-content p {
+  font-family: 'Roboto', sans-serif;
+  font-size: 16px;
+  color: #fff;
+  margin: 0 0 24px 0;
+}
+
+.modal-buttons {
+  display: flex;
+  gap: 16px;
+  justify-content: center;
+}
+
+.modal-btn {
+  font-family: 'Oswald', sans-serif;
+  font-size: 16px;
+  font-weight: 600;
+  padding: 12px 24px;
+  border: none;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.modal-btn.sneaky {
+  background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+  color: white;
+  box-shadow: 0 4px 15px rgba(102, 126, 234, 0.4);
+}
+
+.modal-btn.sneaky:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(102, 126, 234, 0.6);
+}
+
+.modal-btn.move {
+  background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+  color: white;
+  box-shadow: 0 4px 15px rgba(245, 87, 108, 0.4);
+}
+
+.modal-btn.move:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(245, 87, 108, 0.6);
+}
+
+/* Positioned Tokens */
+.positioned-token {
+  position: absolute;
+  pointer-events: auto;
+  transition: top 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94), 
+              left 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94);
+  transform: translate(-50%, -50%);
 }
 
 /* Responsive adjustments */
