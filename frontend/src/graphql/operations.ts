@@ -86,6 +86,8 @@ export const GET_LOBBY_QUERY = gql`
           price
         }
         pendingFirstClass
+        isGameOver
+        winnerName
       }
       players {
         username
@@ -97,6 +99,9 @@ export const GET_LOBBY_QUERY = gql`
         properties {
           name
           color
+          diameter
+          column
+          destinationId
         }
       }
     }

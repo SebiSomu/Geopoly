@@ -23,6 +23,8 @@ pub struct GameStateDisplay {
     pub awaiting_action: bool,
     pub pending_purchase: Option<PendingPurchase>,
     pub pending_first_class: bool,
+    pub is_game_over: bool,
+    pub winner_name: Option<String>,
 }
 
 #[ComplexObject]
@@ -49,6 +51,14 @@ impl Lobby {
             
             let pending_first_class = game.step == GameStep::WaitingForFirstClassDecision;
             
+            let mut winner_name = None;
+            if game.game_over {
+                // Find winner (player with a full passport)
+                winner_name = game.players.iter()
+                    .find(|p| p.passport.is_full())
+                    .map(|p| p.name.clone());
+            }
+
             Some(GameStateDisplay {
                 current_turn_index: game.current_player_idx as u8,
                 last_die1: d1,
@@ -56,6 +66,8 @@ impl Lobby {
                 awaiting_action: game.step == GameStep::WaitingForForcedDeal,
                 pending_purchase,
                 pending_first_class,
+                is_game_over: game.game_over,
+                winner_name,
             })
         } else {
             None
@@ -69,30 +81,46 @@ fn sync_lobby_state(players: &mut Vec<Player>, game: &Game) {
             server_player.position = engine_player.position as u8;
             server_player.in_jail = engine_player.in_jail;
             server_player.money = engine_player.money;
-            server_player.properties = engine_player.passport.all_stamps().iter()
-                .map(|s| {
-                    let color = if let Some(id) = s.destination_id {
-                        match game.board.find_destination_by_id(id).map(|d| d.color) {
-                            Some(game_engine::board::Color::Brown) => "brown",
-                            Some(game_engine::board::Color::LightBlue) => "lightblue",
-                            Some(game_engine::board::Color::Pink) => "pink",
-                            Some(game_engine::board::Color::Orange) => "orange",
-                            Some(game_engine::board::Color::Red) => "red",
-                            Some(game_engine::board::Color::Yellow) => "yellow",
-                            Some(game_engine::board::Color::Green) => "green",
-                            Some(game_engine::board::Color::DarkBlue) => "darkblue",
-                            None => "gray",
-                        }.to_string()
-                    } else {
-                        "gray".to_string()
-                    };
-                    crate::model::PropertyInfo {
-                        name: s.name.clone(),
-                        color,
-                    }
-                })
-                .collect();
+            let mut properties = Vec::new();
+
+            // Populate from left column
+            for s in &engine_player.passport.left_column {
+                properties.push(map_stamp_to_info(s, game, "left"));
+            }
+
+            // Populate from right column
+            for s in &engine_player.passport.right_column {
+                properties.push(map_stamp_to_info(s, game, "right"));
+            }
+
+            server_player.properties = properties;
         }
+    }
+}
+
+fn map_stamp_to_info(s: &game_engine::passport::Stamp, game: &game_engine::game::Game, column: &str) -> crate::model::PropertyInfo {
+    let color = if let Some(id) = s.destination_id {
+        match game.board.find_destination_by_id(id).map(|d| d.color) {
+            Some(game_engine::board::Color::Brown) => "brown",
+            Some(game_engine::board::Color::LightBlue) => "lightblue",
+            Some(game_engine::board::Color::Pink) => "pink",
+            Some(game_engine::board::Color::Orange) => "orange",
+            Some(game_engine::board::Color::Red) => "red",
+            Some(game_engine::board::Color::Yellow) => "yellow",
+            Some(game_engine::board::Color::Green) => "green",
+            Some(game_engine::board::Color::DarkBlue) => "darkblue",
+            None => "grey",
+        }.to_string()
+    } else {
+        "grey".to_string()
+    };
+
+    crate::model::PropertyInfo {
+        name: s.name.clone(),
+        color,
+        diameter: s.diameter,
+        column: column.to_string(),
+        destination_id: s.destination_id,
     }
 }
 

@@ -35,7 +35,13 @@ const gameState = reactive({
     in_jail: boolean;
     consecutive_doubles: number;
     money: number;
-    properties: Array<{ name: string; color: string }>;
+    properties: Array<{ 
+      name: string; 
+      color: string;
+      diameter: number;
+      column: 'left' | 'right';
+      destination_id?: number | null;
+    }>;
   }>,
   currentTurnIndex: 0,
   diceValue1: 1,
@@ -46,6 +52,8 @@ const gameState = reactive({
   awaitingAction: false,
   pendingPurchase: null as { destId: number; destName: string; price: number } | null,
   pendingFirstClass: false,
+  isGameOver: false,
+  winnerName: null as string | null,
   moneyNotifications: [] as Array<{ id: number; amount: string; type: 'plus' | 'minus'; x: number; y: number; playerName: string }>
 })
 
@@ -55,9 +63,25 @@ let notificationId = 0;
 watchEffect(() => {
   if (result.value?.getLobby) {
     const lobby = result.value.getLobby
-    const serverGameState = lobby.gameState
     
-    // Sync players
+    // 1. Sync Game State
+    if (lobby.gameState) {
+      gameState.isGameOver = lobby.gameState.isGameOver;
+      gameState.winnerName = lobby.gameState.winnerName;
+
+      // Sync turn and dice, BUT only if we are not currently animating a roll ourselves
+      if (!gameState.isRolling && !gameState.isMoving) {
+        gameState.currentTurnIndex = lobby.gameState.currentTurnIndex
+        if (lobby.gameState.lastDie1) gameState.diceValue1 = lobby.gameState.lastDie1
+        if (lobby.gameState.lastDie2) gameState.diceValue2 = lobby.gameState.lastDie2
+        gameState.awaitingAction = lobby.gameState.awaitingAction
+        gameState.forcedDealActive = lobby.gameState.awaitingAction
+        gameState.pendingPurchase = lobby.gameState.pendingPurchase || null
+        gameState.pendingFirstClass = lobby.gameState.pendingFirstClass || false
+      }
+    }
+
+    // 2. Sync Players
     if (lobby.players) {
       // Map server players to local format
       const newPlayers = lobby.players.map((p: any) => ({
@@ -67,7 +91,13 @@ watchEffect(() => {
         in_jail: p.inJail || false,
         consecutive_doubles: p.consecutiveDoubles || 0,
         money: p.money || 1500,
-        properties: p.properties || []
+        properties: (p.properties || []).map((prop: any) => ({
+          name: prop.name,
+          color: prop.color,
+          diameter: prop.diameter,
+          column: prop.column,
+          destination_id: prop.destinationId
+        }))
       }))
 
       // Detect money changes for animations
@@ -80,12 +110,11 @@ watchEffect(() => {
           
           // Add notification
           const id = notificationId++;
-          // We'll show it near the player card in the sidebar or just globally distributed
           gameState.moneyNotifications.push({
             id,
             amount: amountStr,
             type,
-            x: 0, // Will be handled by CSS transition
+            x: 0, 
             y: 0,
             playerName: np.name
           });
@@ -98,19 +127,6 @@ watchEffect(() => {
       });
 
       gameState.players = newPlayers;
-    }
-    
-    if (serverGameState) {
-      // Sync turn and dice, BUT only if we are not currently animating a roll ourselves
-      if (!gameState.isRolling && !gameState.isMoving) {
-        gameState.currentTurnIndex = serverGameState.currentTurnIndex
-        if (serverGameState.lastDie1) gameState.diceValue1 = serverGameState.lastDie1
-        if (serverGameState.lastDie2) gameState.diceValue2 = serverGameState.lastDie2
-        gameState.awaitingAction = serverGameState.awaitingAction
-        gameState.forcedDealActive = serverGameState.awaitingAction
-        gameState.pendingPurchase = serverGameState.pendingPurchase || null
-        gameState.pendingFirstClass = serverGameState.pendingFirstClass || false
-      }
     }
   }
 })
@@ -423,7 +439,7 @@ function getColorStyle(color?: string): string {
   return color // Assume it might be a hex or actual color name
 }
 
-function getSpaceIcon(type: string): string {
+const getSpaceIcon = (type: string): string => {
   switch (type) {
     case 'chance': return '?'
     case 'airport': return '✈'
@@ -431,6 +447,37 @@ function getSpaceIcon(type: string): string {
     case 'first_class': return '💎'
     default: return ''
   }
+}
+
+// Check if a property is owned by anyone
+const isPropertyOwned = (destId: number) => {
+  return gameState.players.some(p => p.properties.some((prop: any) => prop.destination_id === destId));
+}
+
+// Map characters to emojis
+const getCharacterEmoji = (char?: string) => {
+  switch (char) {
+    case 'seal': return '🦭';
+    case 'capybara': return '🐨';
+    case 'cat': return '🐱';
+    case 'dog': return '🐶';
+    default: return '👤';
+  }
+}
+
+// Zone mapping: 
+// zone-bottom-right -> player index 0
+// zone-bottom-left  -> player index 1
+// zone-top-left     -> player index 2
+// zone-top-right    -> player index 3
+const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'top-right') => {
+  const indexMap = {
+    'bottom-right': 0,
+    'bottom-left': 1,
+    'top-left': 2,
+    'top-right': 3
+  };
+  return gameState.players[indexMap[zone]];
 }
 </script>
 
@@ -511,10 +558,10 @@ function getSpaceIcon(type: string): string {
             </div>
             
             <!-- Property Stamp -->
-            <div v-if="space.color" class="property-stamp">
+            <div v-if="space.color && !isPropertyOwned(space.id!)" class="property-stamp">
               <Stamp 
                 :color-type="space.color === 'darkblue' ? 'blue' : space.color"
-                :number="space.id"
+                :number="space.id!"
                 :label="space.name"
               />
             </div>
@@ -596,10 +643,10 @@ function getSpaceIcon(type: string): string {
               </template>
             </div>
             <!-- Property Stamp -->
-            <div v-if="space.color" class="property-stamp">
+            <div v-if="space.color && !isPropertyOwned(space.id!)" class="property-stamp">
               <Stamp 
                 :color-type="space.color === 'darkblue' ? 'blue' : space.color"
-                :number="space.id"
+                :number="space.id!"
                 :label="space.name"
               />
             </div>
@@ -612,14 +659,24 @@ function getSpaceIcon(type: string): string {
           <!-- Passport zone TOP-LEFT -->
           <div class="passport-zone zone-top-left">
             <div class="passport-area">
-              <Passport />
+              <Passport 
+                v-if="getPlayerByZone('top-left')"
+                :properties="getPlayerByZone('top-left')?.properties"
+                :player-name="getPlayerByZone('top-left')?.name"
+                :player-emoji="getCharacterEmoji(getPlayerByZone('top-left')?.character)"
+              />
             </div>
           </div>
           
           <!-- Passport zone TOP-RIGHT -->
           <div class="passport-zone zone-top-right">
             <div class="passport-area">
-              <Passport />
+              <Passport 
+                v-if="getPlayerByZone('top-right')"
+                :properties="getPlayerByZone('top-right')?.properties"
+                :player-name="getPlayerByZone('top-right')?.name"
+                :player-emoji="getCharacterEmoji(getPlayerByZone('top-right')?.character)"
+              />
             </div>
           </div>
           
@@ -704,18 +761,48 @@ function getSpaceIcon(type: string): string {
             </div>
           </div>
 
+          <!-- Victory Modal -->
+          <div v-if="gameState.isGameOver" class="victory-modal">
+            <div class="modal-content victory">
+              <div class="confetti-placeholder">🎉✨🎊</div>
+              <h3>🏆 WE HAVE A WINNER!</h3>
+              <div class="winner-info">
+                <div class="winner-token">
+                  <GameToken :type="gameState.players.find(p => p.name === gameState.winnerName)?.character || 'cat'" />
+                </div>
+                <p class="winner-name">{{ gameState.winnerName }}</p>
+              </div>
+              <p>Has completed their passport and conquered the world!</p>
+              <div class="modal-buttons">
+                <button class="modal-btn back-to-lobby" @click="$router.push('/lobby')">
+                  Return to Lobby
+                </button>
+              </div>
+            </div>
+          </div>
+
           
           <!-- Passport zone BOTTOM-LEFT -->
           <div class="passport-zone zone-bottom-left">
             <div class="passport-area">
-              <Passport />
+              <Passport 
+                v-if="getPlayerByZone('bottom-left')"
+                :properties="getPlayerByZone('bottom-left')?.properties"
+                :player-name="getPlayerByZone('bottom-left')?.name"
+                :player-emoji="getCharacterEmoji(getPlayerByZone('bottom-left')?.character)"
+              />
             </div>
           </div>
           
           <!-- Passport zone BOTTOM-RIGHT -->
           <div class="passport-zone zone-bottom-right">
             <div class="passport-area">
-              <Passport />
+              <Passport 
+                v-if="getPlayerByZone('bottom-right')"
+                :properties="getPlayerByZone('bottom-right')?.properties"
+                :player-name="getPlayerByZone('bottom-right')?.name"
+                :player-emoji="getCharacterEmoji(getPlayerByZone('bottom-right')?.character)"
+              />
             </div>
           </div>
         </div>
@@ -783,10 +870,10 @@ function getSpaceIcon(type: string): string {
               </template>
             </div>
             <!-- Property Stamp -->
-            <div v-if="space.color" class="property-stamp">
+            <div v-if="space.color && !isPropertyOwned(space.id!)" class="property-stamp">
               <Stamp 
                 :color-type="space.color === 'darkblue' ? 'blue' : space.color"
-                :number="space.id"
+                :number="space.id!"
                 :label="space.name"
               />
             </div>
@@ -869,10 +956,10 @@ function getSpaceIcon(type: string): string {
               </template>
             </div>
             <!-- Property Stamp -->
-            <div v-if="space.color" class="property-stamp">
+            <div v-if="space.color && !isPropertyOwned(space.id!)" class="property-stamp">
               <Stamp 
                 :color-type="space.color === 'darkblue' ? 'blue' : space.color"
-                :number="space.id"
+                :number="space.id!"
                 :label="space.name"
               />
             </div>

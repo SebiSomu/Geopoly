@@ -4,6 +4,7 @@ use serde::{Serialize, Deserialize};
 pub const LEFT_COLUMN_HEIGHT: f32 = 8.0; // cm
 pub const RIGHT_COLUMN_HEIGHT: f32 = 7.0; // cm
 pub const FIRST_CLASS_DIAMETER: f32 = 1.4; // cm
+pub const STAMP_OVERLAP_CM: f32 = 0.075; // 3px at 40px/cm
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stamp {
@@ -25,7 +26,7 @@ impl Stamp {
         Stamp {
             destination_id: None,
             diameter: FIRST_CLASS_DIAMETER,
-            name: "Clasa Întâi".to_string(),
+            name: "First Class".to_string(),
         }
     }
 }
@@ -54,14 +55,17 @@ impl Passport {
     /// Returnează true dacă a fost adăugată cu succes
     pub fn add_stamp(&mut self, stamp: Stamp) -> bool {
         // 1️⃣ Încercăm să punem în coloana STÂNGĂ DOAR dacă ÎNCAPE
-        if self.left_height_used + stamp.diameter <= LEFT_COLUMN_HEIGHT {
-            self.left_height_used += stamp.diameter;
+        // Calculăm înălțimea efectivă adăugată (diametru minus overlap dacă nu e prima)
+        let left_overlap = if self.left_column.is_empty() { 0.0 } else { STAMP_OVERLAP_CM };
+        if self.left_height_used + stamp.diameter - left_overlap <= LEFT_COLUMN_HEIGHT {
+            self.left_height_used += stamp.diameter - left_overlap;
             self.left_column.push(stamp);
             return true;
         }
 
         // 2️⃣ Altfel, se pune în coloana DREAPTĂ (chiar dacă depășește)
-        self.right_height_used += stamp.diameter;
+        let right_overlap = if self.right_column.is_empty() { 0.0 } else { STAMP_OVERLAP_CM };
+        self.right_height_used += stamp.diameter - right_overlap;
         self.right_column.push(stamp);
 
         // 3️⃣ Dacă depășim coloana dreaptă → CÂȘTIG
@@ -82,7 +86,8 @@ impl Passport {
     pub fn remove_last_stamp(&mut self) -> Option<Stamp> {
         // Ultima stampilă e fie în dreapta (dacă există), fie în stânga
         if let Some(stamp) = self.right_column.pop() {
-            self.right_height_used -= stamp.diameter;
+            let overlap = if self.right_column.is_empty() { 0.0 } else { STAMP_OVERLAP_CM };
+            self.right_height_used -= (stamp.diameter - overlap);
 
             if self.right_height_used <= RIGHT_COLUMN_HEIGHT {
                 self.overflowed = false;
@@ -92,7 +97,8 @@ impl Passport {
         }
 
         if let Some(stamp) = self.left_column.pop() {
-            self.left_height_used -= stamp.diameter;
+            let overlap = if self.left_column.is_empty() { 0.0 } else { STAMP_OVERLAP_CM };
+            self.left_height_used -= (stamp.diameter - overlap);
             return Some(stamp);
         }
 

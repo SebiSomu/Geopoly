@@ -19,13 +19,13 @@ export interface StampProps {
 
 // ============ Dimension Mapping (cm to px) ============
 const STAMP_SIZES: Record<StampColor, number> = {
-  grey: 53, brown: 57, lightblue: 60, pink: 68, orange: 70, 
-  red: 79, yellow: 83, green: 93, blue: 95,
+  grey: 56, brown: 60, lightblue: 64, pink: 72, orange: 74, 
+  red: 84, yellow: 88, green: 98, blue: 100,
 };
 
 // ============ Matte Colors (Reference matched) ============
 const COLORS: Record<StampColor, string> = {
-  grey: '#a6a6a6',
+  grey: '#bdbdbd',
   brown: '#8B4513',
   lightblue: '#79F7EF',
   pink: '#D61A8B',
@@ -79,10 +79,10 @@ const stampStyle = computed<CSSProperties>(() => ({
       </defs>
 
       <!-- Outer thin ring -->
-      <circle cx="50" cy="50" r="48" fill="none" stroke="rgba(0,0,0,0.15)" stroke-width="0.5" />
+      <circle cx="50" cy="50" r="50" fill="none" stroke="rgba(0,0,0,0.15)" stroke-width="0.5" />
       
       <!-- Middle ring (thick ink area) -->
-      <circle cx="50" cy="50" r="38" fill="none" stroke="black" stroke-width="0.8" opacity="0.3" />
+      <circle cx="50" cy="50" r="40" fill="none" stroke="black" stroke-width="1.0" opacity="0.3" />
       
       <!-- Inner core circle -->
       <circle cx="50" cy="50" r="28" fill="none" stroke="black" stroke-width="0.5" opacity="0.2" />
@@ -126,14 +126,13 @@ const stampStyle = computed<CSSProperties>(() => ({
 <style scoped>
 .stamp {
   border-radius: 50%;
-  border: 1.5px solid rgba(0, 0, 0, 0.2);
+  border: 1px solid rgba(0, 0, 0, 0.2);
+  box-sizing: border-box;
   display: flex;
   align-items: center;
   justify-content: center;
   position: relative;
-  box-shadow: 
-    0 3px 6px rgba(0, 0, 0, 0.2),
-    inset 0 1px 2px rgba(255, 255, 255, 0.2);
+  box-shadow: 0 3px 6px rgba(0, 0, 0, 0.2);
   overflow: hidden;
   transition: transform 0.1s ease;
 }

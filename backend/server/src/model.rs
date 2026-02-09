@@ -15,6 +15,9 @@ pub struct User {
 pub struct PropertyInfo {
     pub name: String,
     pub color: String, // "gray" for First Class, or hex/color name for destinations
+    pub diameter: f32,
+    pub column: String, // "left" or "right"
+    pub destination_id: Option<u8>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]

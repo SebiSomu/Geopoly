@@ -49,12 +49,12 @@ impl ChanceDeck {
                 can_keep: false,
             },
             ChanceCard {
-                description: "Bonus pentru \"Clasa Întâi\"! Colectează câte M40 pentru fiecare ștampilă de \"Clasa Întâi\" din pașaportul tău.".to_string(),
+                description: "Bonus for \"First Class\"! Collect M40 for each \"First Class\" stamp in your passport.".to_string(),
                 action: ChanceCardAction::FirstClassBonus,
                 can_keep: false,
             },
             ChanceCard {
-                description: "Bonus pentru \"Clasa Întâi\"! Colectează câte M40 pentru fiecare ștampilă de \"Clasa Întâi\" din pașaportul tău.".to_string(),
+                description: "Bonus for \"First Class\"! Collect M40 for each \"First Class\" stamp in your passport.".to_string(),
                 action: ChanceCardAction::FirstClassBonus,
                 can_keep: false,
             },
@@ -220,7 +220,7 @@ impl HereAndNowDeck {
                 action: HereAndNowCardAction::CollectFromRichest,
             },
             HereAndNowCard {
-                description: "Fură ștampila de \"Clasa Întâi\" a altui jucător atunci când o primește.".to_string(),
+                description: "Steal another player's \"First Class\" stamp when they receive it.".to_string(),
                 action: HereAndNowCardAction::StealFirstClass,
             },
             HereAndNowCard {

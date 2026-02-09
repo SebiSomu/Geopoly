@@ -5,6 +5,14 @@ import Stamp from './Stamp.vue';
 import type { StampColor } from './Stamp.vue';
 
 // ============ Type Definitions ============
+export interface PassportProperty {
+  name: string;
+  color: string;
+  diameter: number;
+  column: 'left' | 'right';
+  destination_id?: number | null;
+}
+
 export interface PlacedStamp {
   id: string;
   colorType: StampColor;
@@ -13,10 +21,17 @@ export interface PlacedStamp {
   y: number;
   rotation: number;
   column: 'left' | 'right';
+  size: number;
 }
 
+const props = defineProps<{
+  properties?: PassportProperty[];
+  playerName?: string;
+  playerEmoji?: string;
+}>();
+
 // ============ State ============
-const stamps = ref<PlacedStamp[]>([]);
+const localStamps = ref<PlacedStamp[]>([]); // Fallback for drag & drop or local testing
 const leftColumnRef = ref<HTMLElement | null>(null);
 const rightColumnRef = ref<HTMLElement | null>(null);
 
@@ -42,17 +57,25 @@ const onDrop = (event: DragEvent, column: 'left' | 'right'): void => {
 
     // Center stamp on drop position
     const x = event.clientX - columnRect.left - (droppedStamp.size || 35);
-    const y = event.clientY - columnRect.top - (droppedStamp.size || 35);
+    // Align y to bottom-relative for consistency with sync logic
+    const y = columnRect.bottom - event.clientY - (droppedStamp.size || 35);
     const rotation = Math.floor(Math.random() * 16) - 8;
 
-    stamps.value.push({
+    let colorType = droppedStamp.colorType.toLowerCase();
+    if (colorType === 'gray') colorType = 'grey';
+    if (colorType === 'darkblue') colorType = 'blue';
+
+    const stampSize = SIZES[colorType as keyof typeof SIZES] || 35;
+
+    localStamps.value.push({
       id: `stamp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
-      colorType: droppedStamp.colorType,
+      colorType: colorType as any,
       number: droppedStamp.number,
       x,
       y,
       rotation,
       column,
+      size: stampSize,
     });
   } catch (e) {
     console.error('Failed to parse dropped stamp data:', e);
@@ -61,19 +84,93 @@ const onDrop = (event: DragEvent, column: 'left' | 'right'): void => {
 
 // ============ Clear Stamps ============
 const clearStamps = (): void => {
-  stamps.value = [];
+  localStamps.value = [];
 };
 
-// ============ Computed Filters ============
-const leftStamps = computed(() => stamps.value.filter(s => s.column === 'left'));
-const rightStamps = computed(() => stamps.value.filter(s => s.column === 'right'));
+// ============ Computed Positioning ============
+const COL_WIDTH = 100;
+
+// Local mapping of sizes for positioning (copied from Stamp.vue to ensure 1:1 match)
+const SIZES = {
+  grey: 56, 
+  brown: 60, 
+  lightblue: 64, 
+  pink: 72, 
+  orange: 74, 
+  red: 84, 
+  yellow: 88, 
+  green: 98, 
+  blue: 100,
+};
+
+const processedStamps = computed(() => {
+  const result: PlacedStamp[] = [...localStamps.value];
+  
+  if (props.properties) {
+    let leftUsedHeight = 0;
+    let rightUsedHeight = 0;
+    let leftCount = 0;
+    let rightCount = 0;
+    
+    props.properties.forEach((p, index) => {
+      // Normalize color name
+      let colorKey = p.color.toLowerCase();
+      if (colorKey === 'gray') colorKey = 'grey';
+      if (colorKey === 'darkblue') colorKey = 'blue';
+
+      // Priority: use the diameter sent from server, fallback to hardcoded map
+      const diameterPx = Math.round(p.diameter * 40) || SIZES[colorKey as keyof typeof SIZES] || 35;
+      const rotation = (index * 7) % 15 - 7;
+      
+      let x = 0;
+      let y = 0;
+      
+      if (p.column === 'left') {
+        // Zig-zag: Even index in column is RIGHT, Odd is LEFT
+        x = (leftCount % 2 === 0) ? (COL_WIDTH - diameterPx) : 0;
+        // y will now be used as 'bottom' offset
+        y = leftUsedHeight;
+        // Subtract 4px for overlap to avoid sub-pixel gaps during rotations
+        leftUsedHeight += (diameterPx - 3); 
+        leftCount++;
+      } else {
+        x = (rightCount % 2 === 0) ? (COL_WIDTH - diameterPx) : 0;
+        y = rightUsedHeight;
+        rightUsedHeight += (diameterPx - 3);
+        rightCount++;
+      }
+      
+      result.push({
+        id: `prop-${index}-${p.name}`,
+        colorType: colorKey as any,
+        number: p.destination_id || '★',
+        x,
+        y,
+        rotation,
+        column: p.column,
+        size: diameterPx
+      });
+    });
+  }
+  
+  return result;
+});
+
+const leftStamps = computed(() => processedStamps.value.filter(s => s.column === 'left'));
+const rightStamps = computed(() => processedStamps.value.filter(s => s.column === 'right'));
 
 // ============ Expose ============
-defineExpose({ clearStamps, stamps });
+defineExpose({ clearStamps, stamps: processedStamps });
 </script>
 
 <template>
   <div class="passport-wrapper">
+    <!-- Player Label -->
+    <div v-if="playerName" class="player-label">
+      <span class="player-emoji">{{ playerEmoji }}</span>
+      <span class="player-name">{{ playerName }}</span>
+    </div>
+
     <div class="passport-body">
       <!-- Left Column -->
       <div 
@@ -86,7 +183,12 @@ defineExpose({ clearStamps, stamps });
           v-for="stamp in leftStamps" 
           :key="stamp.id"
           class="placed-stamp"
-          :style="{ left: `${stamp.x}px`, top: `${stamp.y}px` }"
+          :style="{ 
+            left: `${stamp.x}px`, 
+            bottom: `${stamp.y}px`,
+            width: `${stamp.size}px`,
+            height: `${stamp.size}px`
+          }"
         >
           <Stamp 
             :colorType="stamp.colorType"
@@ -112,7 +214,12 @@ defineExpose({ clearStamps, stamps });
           v-for="stamp in rightStamps" 
           :key="stamp.id"
           class="placed-stamp"
-          :style="{ left: `${stamp.x}px`, top: `${stamp.y}px` }"
+          :style="{ 
+            left: `${stamp.x}px`, 
+            bottom: `${stamp.y}px`,
+            width: `${stamp.size}px`,
+            height: `${stamp.size}px`
+          }"
         >
           <Stamp 
             :colorType="stamp.colorType"
@@ -124,7 +231,7 @@ defineExpose({ clearStamps, stamps });
     </div>
     
     <!-- Reset Action -->
-    <button v-if="stamps.length > 0" class="reset-btn" @click="clearStamps">
+    <button v-if="localStamps.length > 0" class="reset-btn" @click="clearStamps">
       Reset
     </button>
   </div>
@@ -135,34 +242,56 @@ defineExpose({ clearStamps, stamps });
   display: flex;
   flex-direction: column;
   align-items: center;
-  gap: 15px;
+  gap: 8px;
   user-select: none;
 }
 
+.player-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  background: rgba(255, 255, 255, 0.9);
+  padding: 4px 12px;
+  border-radius: 20px;
+  box-shadow: 0 4px 10px rgba(0,0,0,0.1);
+  border: 1px solid rgba(0,0,0,0.05);
+  transform: translateY(-5px);
+  z-index: 20;
+}
+
+.player-emoji {
+  font-size: 1.2rem;
+}
+
+.player-name {
+  font-weight: 700;
+  font-size: 0.9rem;
+  color: #333;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
 .passport-body {
-  width: 220px;
-  height: 360px;
+  width: 250px;
+  height: 344px;
   background-color: #f5dcd7;
   border-radius: 12px;
   display: flex;
   justify-content: center;
   padding: 12px;
-  gap: 10px;
+  gap: 12px;
   box-shadow: 
     0 10px 30px rgba(0, 0, 0, 0.2),
     0 2px 5px rgba(0, 0, 0, 0.1);
 }
 
 .column {
-  flex: 1;
+  width: 100px;
+  flex: none;
   background-color: #ede2da;
   position: relative;
   overflow: hidden;
   border-radius: 4px;
-  box-shadow: 
-    inset 2px 2px 5px rgba(0, 0, 0, 0.2),
-    inset -1px -1px 2px rgba(255, 255, 255, 0.4);
-  border: 1px solid rgba(0, 0, 0, 0.1);
 }
 
 .column-left {
@@ -181,7 +310,7 @@ defineExpose({ clearStamps, stamps });
   top: 0;
   left: 0;
   right: 0;
-  height: 48px;
+  height: 40px;
   background: repeating-linear-gradient(
     45deg,
     rgba(139, 90, 43, 0.1),
