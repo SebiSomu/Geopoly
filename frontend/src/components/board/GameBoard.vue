@@ -54,7 +54,8 @@ const gameState = reactive({
   pendingFirstClass: false,
   isGameOver: false,
   winnerName: null as string | null,
-  moneyNotifications: [] as Array<{ id: number; amount: string; type: 'plus' | 'minus'; x: number; y: number; playerName: string }>
+  moneyNotifications: [] as Array<{ id: number; amount: string; type: 'plus' | 'minus'; x: number; y: number; playerName: string }>,
+  pickingTarget: false,
 })
 
 let notificationId = 0;
@@ -362,13 +363,20 @@ const movePlayer = async (targetPosition: number) => {
 
 // Handle Forced Deal choices
 const handleSneakySwap = async () => {
+  // Instead of calling mutation immediately, we switch to target selection mode
+  gameState.pickingTarget = true
+}
+
+const executeSwap = async (targetUsername: string) => {
   try {
     await resolveForcedDealMutation({
       code: props.code,
       username: username,
-      action: 'sneaky_swap'
+      action: 'sneaky_swap',
+      target: targetUsername
     })
     gameState.forcedDealActive = false
+    gameState.pickingTarget = false
   } catch (e) {
     console.error("Swap failed:", e)
   }
@@ -691,7 +699,44 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 
           <!-- Dice in the center with Roll Button -->
           <div class="dice-container-center">
-            <div class="dice-control-panel">
+            <!-- Forced Deal Panel (Compact) -->
+            <div v-if="gameState.forcedDealActive && isMyTurn" class="dice-control-panel forced-deal-panel">
+               <template v-if="!gameState.pickingTarget">
+                  <h3>⚡ Forced Deal!</h3>
+                  <p>Choose your action:</p>
+                  <div class="modal-buttons vertical">
+                    <button class="modal-btn sneaky" @click="handleSneakySwap">
+                      🤝 Sneaky Swap
+                    </button>
+                    <button class="modal-btn move" @click="handleMoveN">
+                      🚀 Move {{ gameState.diceValue2 }} Spaces
+                    </button>
+                  </div>
+               </template>
+               <template v-else>
+                  <h3>🤝 Who to swap?</h3>
+                  <div class="target-selection-grid">
+                    <button 
+                      v-for="p in gameState.players.filter(p => p.name !== username)" 
+                      :key="p.name"
+                      class="target-btn"
+                      @click="executeSwap(p.name)"
+                      :disabled="p.properties.length === 0"
+                    >
+                      <div class="target-token">
+                        <GameToken :type="p.character" />
+                      </div>
+                      <span class="target-name">{{ p.name }}</span>
+                    </button>
+                  </div>
+                  <button class="modal-btn skip mini" @click="gameState.pickingTarget = false">
+                    ⬅ Back
+                  </button>
+               </template>
+            </div>
+
+            <!-- Normal Dice Panel -->
+            <div v-else class="dice-control-panel">
               <GameDice 
                 :value1="gameState.diceValue1" 
                 :value2="gameState.diceValue2" 
@@ -712,21 +757,6 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
             </div>
           </div>
 
-          <!-- Forced Deal Modal -->
-          <div v-if="gameState.forcedDealActive && isMyTurn" class="forced-deal-modal">
-            <div class="modal-content">
-              <h3>⚡ Forced Deal!</h3>
-              <p>Choose your action:</p>
-              <div class="modal-buttons">
-                <button class="modal-btn sneaky" @click="handleSneakySwap">
-                  🤝 Sneaky Swap
-                </button>
-                <button class="modal-btn move" @click="handleMoveN">
-                  🚀 Move {{ gameState.diceValue2 }} Spaces
-                </button>
-              </div>
-            </div>
-          </div>
 
           <!-- Purchase Decision Modal -->
           <div v-if="gameState.pendingPurchase && isMyTurn" class="purchase-modal">
@@ -2068,12 +2098,11 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
   left: 0;
   right: 0;
   bottom: 0;
-  background: rgba(0, 0, 0, 0.85);
+  background: rgba(0, 0, 0, 0.4); /* Reduced opacity, no blur */
   display: flex;
   align-items: center;
   justify-content: center;
   z-index: 100;
-  backdrop-filter: blur(8px);
   animation: fadeIn 0.3s ease;
 }
 
@@ -2152,6 +2181,89 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 .modal-btn.move:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(245, 87, 108, 0.6);
+}
+
+.forced-deal-panel {
+  padding: 16px !important;
+  width: 240px !important;
+}
+
+.forced-deal-panel h3 {
+  font-size: 18px !important;
+  margin-bottom: 4px !important;
+}
+
+.forced-deal-panel p {
+  font-size: 13px !important;
+  margin-bottom: 12px !important;
+}
+
+.forced-deal-panel .modal-btn {
+  padding: 10px 16px;
+  font-size: 14px;
+}
+
+.modal-buttons.vertical {
+  flex-direction: column;
+  width: 100%;
+  gap: 8px;
+}
+
+.target-selection-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 10px;
+  width: 100%;
+  margin-bottom: 15px;
+}
+
+.target-btn {
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 12px;
+  padding: 8px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 4px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.target-btn:hover:not(:disabled) {
+  background: rgba(255, 255, 255, 0.15);
+  border-color: #ffd700;
+  transform: translateY(-2px);
+}
+
+.target-btn:disabled {
+  opacity: 0.3;
+  cursor: not-allowed;
+  filter: grayscale(1);
+}
+
+.target-token {
+  width: 32px;
+  height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.target-name {
+  font-size: 11px;
+  color: #fff;
+  font-weight: 600;
+  text-transform: uppercase;
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.modal-btn.skip.mini {
+  padding: 6px 16px;
+  font-size: 12px;
 }
 
 /* Purchase and First Class modals - reuse forced-deal-modal base */

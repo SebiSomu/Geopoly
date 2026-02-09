@@ -389,7 +389,7 @@ impl MutationRoot {
     }
 
     /// Resolve forced deal using Game Engine
-    async fn resolve_forced_deal(&self, ctx: &Context<'_>, code: String, username: String, action: String) -> Result<Lobby> {
+    async fn resolve_forced_deal(&self, ctx: &Context<'_>, code: String, username: String, action: String, target: Option<String>) -> Result<Lobby> {
         let db = ctx.data::<DB>()?;
         let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
 
@@ -403,7 +403,7 @@ impl MutationRoot {
             }
 
             // Execute Action
-            game.resolve_forced_deal(&action)
+            game.resolve_forced_deal(&action, target)
                 .map_err(|e| Error::new(e))?;
 
             // Sync State

@@ -130,13 +130,14 @@ const processedStamps = computed(() => {
         x = (leftCount % 2 === 0) ? (COL_WIDTH - diameterPx) : 0;
         // y will now be used as 'bottom' offset
         y = leftUsedHeight;
-        // Subtract 4px for overlap to avoid sub-pixel gaps during rotations
-        leftUsedHeight += (diameterPx - 3); 
+        const overlap = leftCount === 0 ? 0 : 5;
+        leftUsedHeight += (diameterPx - overlap); 
         leftCount++;
       } else {
         x = (rightCount % 2 === 0) ? (COL_WIDTH - diameterPx) : 0;
         y = rightUsedHeight;
-        rightUsedHeight += (diameterPx - 3);
+        const overlap = rightCount === 0 ? 0 : 5;
+        rightUsedHeight += (diameterPx - overlap);
         rightCount++;
       }
       

@@ -124,8 +124,8 @@ export const ROLL_DICE_MUTATION = gql`
 `
 
 export const RESOLVE_FORCED_DEAL_MUTATION = gql`
-  mutation ResolveForcedDeal($code: String!, $username: String!, $action: String!) {
-    resolveForcedDeal(code: $code, username: $username, action: $action) {
+  mutation ResolveForcedDeal($code: String!, $username: String!, $action: String!, $target: String) {
+    resolveForcedDeal(code: $code, username: $username, action: $action, target: $target) {
       code
     }
   }

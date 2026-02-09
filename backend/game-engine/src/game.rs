@@ -103,21 +103,48 @@ impl Game {
         match dice_result {
             DiceResult::BusinessDeal(val) => {
                 let d2 = val;
-                println!("\n{}", "💼 AFACERE FORȚATĂ!".bright_magenta());
-                self.step = GameStep::WaitingForForcedDeal;
                 self.last_dice = Some((1, d2));
-                self.players[player_idx].consecutive_doubles = 0; // Reset doubles on non-double roll
-                
-                Ok(TurnResult {
-                    die1: 1, 
-                    die2: d2, 
-                    is_double: false,
-                    is_forced_deal: true,
-                    new_position: self.players[player_idx].position as u8,
-                    went_to_jail: false,
-                    turn_ends: false, // Așteaptă input
-                    current_player_index: self.current_player_idx as u8,
-                })
+                self.players[player_idx].consecutive_doubles = 0;
+
+                if self.players[player_idx].passport.stamp_count() == 0 {
+                    println!("\n{}", "💼 AFACERE FORȚATĂ! (N-ai ștampile => mutare automată)".bright_magenta());
+                    self.move_player(d2 as i32);
+                    self.handle_landing();
+                    
+                    let turn_ends = match self.step {
+                        GameStep::WaitingForPurchaseDecision { .. } | GameStep::WaitingForFirstClassDecision => false,
+                        _ => true,
+                    };
+
+                    if turn_ends {
+                        self.end_turn();
+                    }
+
+                    Ok(TurnResult {
+                        die1: 1, 
+                        die2: d2, 
+                        is_double: false,
+                        is_forced_deal: false,
+                        new_position: self.players[player_idx].position as u8,
+                        went_to_jail: false,
+                        turn_ends,
+                        current_player_index: self.current_player_idx as u8,
+                    })
+                } else {
+                    println!("\n{}", "💼 AFACERE FORȚATĂ!".bright_magenta());
+                    self.step = GameStep::WaitingForForcedDeal;
+                    
+                    Ok(TurnResult {
+                        die1: 1, 
+                        die2: d2, 
+                        is_double: false,
+                        is_forced_deal: true,
+                        new_position: self.players[player_idx].position as u8,
+                        went_to_jail: false,
+                        turn_ends: false, // Așteaptă input
+                        current_player_index: self.current_player_idx as u8,
+                    })
+                }
             }
             DiceResult::Normal(d1, d2) => {
                 let total = d1 + d2;
@@ -282,7 +309,7 @@ impl Game {
             }
             
             // Dacă a ieșit forțat, verificăm dacă e Afacere Forțată sau dacă trebuie să aleagă ceva
-            if released && is_forced_deal {
+            if released && is_forced_deal && self.players[player_idx].passport.stamp_count() > 0 {
                  println!("\n{}", "💼 AFACERE FORȚATĂ!".bright_magenta());
                  self.step = GameStep::WaitingForForcedDeal;
                  // Nu mai e nevoie să setăm last_dice aici, e setat deja sus
@@ -300,7 +327,7 @@ impl Game {
             Ok(TurnResult {
                 die1: d1, die2: d2,
                 is_double: false,
-                is_forced_deal: released && is_forced_deal,
+                is_forced_deal: released && is_forced_deal && self.players[player_idx].passport.stamp_count() > 0,
                 new_position: self.players[player_idx].position as u8,
                 went_to_jail: !released,
                 turn_ends,
@@ -309,7 +336,7 @@ impl Game {
         }
     }
 
-    pub fn resolve_forced_deal(&mut self, action: &str) -> Result<TurnResult, String> {
+    pub fn resolve_forced_deal(&mut self, action: &str, target_name: Option<String>) -> Result<TurnResult, String> {
         if self.step != GameStep::WaitingForForcedDeal {
             return Err("Not waiting for forced deal".to_string());
         }
@@ -318,7 +345,12 @@ impl Game {
         
         match action {
             "sneaky_swap" => {
-                self.handle_business_deal();
+                let target_idx = if let Some(name) = target_name {
+                    self.players.iter().position(|p| p.name == name)
+                } else {
+                    None
+                };
+                self.handle_business_deal(target_idx);
             },
             "move" => {
                 // Mută cu valoarea de pe die2 (salvată în last_dice)
@@ -959,7 +991,7 @@ impl Game {
         self.chance_deck.discard(card);
     }
 
-    fn handle_business_deal(&mut self) {
+    fn handle_business_deal(&mut self, target_idx: Option<usize>) {
         // Schimbăm ultima stampilă cu a unui adversar
         let current_player_idx = self.current_player_idx;
 
@@ -968,13 +1000,21 @@ impl Game {
             return;
         }
 
-        // Găsim un adversar cu stampile
-        let opponent_idx = self.players.iter()
-            .enumerate()
-            .find(|(i, p)| *i != current_player_idx && p.passport.stamp_count() > 0)
-            .map(|(i, _)| i);
+        // Dacă nu avem target_idx (vechea logică sau nespecificat), găsim primul adversar eligibil
+        let opp_idx = if let Some(idx) = target_idx {
+            if idx == current_player_idx || self.players[idx].passport.stamp_count() == 0 {
+                None
+            } else {
+                Some(idx)
+            }
+        } else {
+            self.players.iter()
+                .enumerate()
+                .find(|(i, p)| *i != current_player_idx && p.passport.stamp_count() > 0)
+                .map(|(i, _)| i)
+        };
 
-        if let Some(opp_idx) = opponent_idx {
+        if let Some(opp_idx) = opp_idx {
             if let Some(my_stamp) = self.players[current_player_idx].passport.remove_last_stamp() {
                 if let Some(opp_stamp) = self.players[opp_idx].passport.remove_last_stamp() {
                     println!("{}", format!("Schimbi '{}' cu '{}' de la {}",
@@ -1050,11 +1090,14 @@ impl Game {
 
         if let Some(stamp) = self.players[player_idx].passport.remove_last_stamp() {
             if let Some(creditor) = creditor_idx {
-                println!("{}", format!("Ultima stampilă '{}' merge la {}",
+                println!("{}", format!("Ultima ștampilă '{}' merge la {}",
                                        stamp.name, self.players[creditor].name).red());
                 self.players[creditor].passport.add_stamp(stamp);
+                
+                // Verifică dacă creditorul a câștigat prin primirea acestei ștampile
+                self.check_and_handle_win(creditor);
             } else {
-                println!("{}", format!("Ultima stampilă '{}' revine pe tablă", stamp.name).red());
+                println!("{}", format!("Ultima ștampilă '{}' revine pe tablă", stamp.name).red());
             }
         }
 

@@ -4,7 +4,7 @@ use serde::{Serialize, Deserialize};
 pub const LEFT_COLUMN_HEIGHT: f32 = 8.0; // cm
 pub const RIGHT_COLUMN_HEIGHT: f32 = 7.0; // cm
 pub const FIRST_CLASS_DIAMETER: f32 = 1.4; // cm
-pub const STAMP_OVERLAP_CM: f32 = 0.075; // 3px at 40px/cm
+pub const STAMP_OVERLAP_CM: f32 = 0.125; // 5px at 40px/cm
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stamp {
@@ -87,7 +87,7 @@ impl Passport {
         // Ultima stampilă e fie în dreapta (dacă există), fie în stânga
         if let Some(stamp) = self.right_column.pop() {
             let overlap = if self.right_column.is_empty() { 0.0 } else { STAMP_OVERLAP_CM };
-            self.right_height_used -= (stamp.diameter - overlap);
+            self.right_height_used -= stamp.diameter - overlap;
 
             if self.right_height_used <= RIGHT_COLUMN_HEIGHT {
                 self.overflowed = false;
@@ -98,7 +98,7 @@ impl Passport {
 
         if let Some(stamp) = self.left_column.pop() {
             let overlap = if self.left_column.is_empty() { 0.0 } else { STAMP_OVERLAP_CM };
-            self.left_height_used -= (stamp.diameter - overlap);
+            self.left_height_used -= stamp.diameter - overlap;
             return Some(stamp);
         }
 
