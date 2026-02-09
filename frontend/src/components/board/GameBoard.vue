@@ -7,6 +7,7 @@ import Stamp from './Stamp.vue'
 import GameDice from './GameDice.vue'
 import CardStack from './CardStack.vue'
 import GameToken from './GameToken.vue'
+import CardHand from '../CardHand.vue'
 
 const props = defineProps<{
   code: string
@@ -44,6 +45,8 @@ const gameState = reactive({
       column: 'left' | 'right';
       destination_id?: number | null;
     }>;
+    hereAndNowCards: Array<{ id: string; description: string }>;
+    chanceCards: Array<{ id: string; description: string }>;
   }>,
   currentTurnIndex: 0,
   diceValue1: 1,
@@ -104,7 +107,9 @@ watchEffect(() => {
           diameter: prop.diameter,
           column: prop.column,
           destination_id: prop.destinationId
-        }))
+        })),
+        hereAndNowCards: p.hereAndNowCards || [],
+        chanceCards: p.chanceCards || []
       }))
 
       // Detect money changes for animations
@@ -141,7 +146,11 @@ watchEffect(() => {
 // Computed check if it's my turn
 const isMyTurn = computed(() => {
   const currentPlayer = gameState.players[gameState.currentTurnIndex]
-  return currentPlayer && currentPlayer.name === username
+  return !!(currentPlayer && currentPlayer.name === username)
+})
+
+const myPlayerData = computed(() => {
+  return gameState.players.find(p => p.name === username);
 })
 
 
@@ -1170,13 +1179,23 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                 :key="pIdx"
                 class="prop-pill"
               >
-                <span class="prop-dot" :style="{ background: getColorStyle(prop.color) }"></span>
+                  <span class="prop-dot" :style="{ background: getColorStyle(prop.color) }"></span>
                 <span class="prop-label">{{ prop.name }}</span>
               </div>
             </div>
           </div>
         </template>
       </div>
+
+      <!-- Personal Player Hand -->
+      <CardHand 
+        v-if="myPlayerData"
+        :code="code"
+        :username="username"
+        :here-and-now-cards="myPlayerData.hereAndNowCards"
+        :chance-cards="myPlayerData.chanceCards"
+        :is-my-turn="isMyTurn"
+      />
   </div>
 </div>
 </template>

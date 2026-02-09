@@ -21,6 +21,18 @@ pub struct PropertyInfo {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]
+pub struct GqlHereAndNowCard {
+    pub id: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]
+pub struct GqlChanceCard {
+    pub id: String,
+    pub description: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]
 pub struct Player {
     pub username: String,
     pub character: Option<String>,
@@ -35,6 +47,10 @@ pub struct Player {
     pub money: u32,
     #[serde(default)]
     pub properties: Vec<PropertyInfo>,
+    #[serde(default)]
+    pub here_and_now_cards: Vec<GqlHereAndNowCard>,
+    #[serde(default)]
+    pub chance_cards: Vec<GqlChanceCard>,
 }
 
 impl Default for Player {
@@ -47,6 +63,8 @@ impl Default for Player {
             consecutive_doubles: 0,
             money: 1500,
             properties: Vec::new(),
+            here_and_now_cards: Vec::new(),
+            chance_cards: Vec::new(),
         }
     }
 }

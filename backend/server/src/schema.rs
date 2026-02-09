@@ -105,6 +105,18 @@ fn sync_lobby_state(players: &mut Vec<Player>, game: &Game) {
             }
 
             server_player.properties = properties;
+
+            // Sync Here & Now cards
+            server_player.here_and_now_cards = engine_player.here_and_now_cards.iter().map(|c| crate::model::GqlHereAndNowCard {
+                id: c.id.clone(),
+                description: c.description.clone(),
+            }).collect();
+
+            // Sync Chance cards
+            server_player.chance_cards = engine_player.chance_cards.iter().map(|c| crate::model::GqlChanceCard {
+                id: c.id.clone(),
+                description: c.description.clone(),
+            }).collect();
         }
     }
 }
@@ -214,6 +226,8 @@ impl MutationRoot {
                 consecutive_doubles: 0,
                 money: 1500,
                 properties: Vec::new(),
+                here_and_now_cards: Vec::new(),
+                chance_cards: Vec::new(),
             }],
             host: username,
             state: "waiting".to_string(),
@@ -251,6 +265,8 @@ impl MutationRoot {
                  consecutive_doubles: 0,
                  money: 1500,
                  properties: Vec::new(),
+                 here_and_now_cards: Vec::new(),
+                 chance_cards: Vec::new(),
              };
              lobby.players.push(new_player.clone());
              
@@ -572,6 +588,48 @@ impl MutationRoot {
             // Execute Action
             game.resolve_airport_destination(target_position)
                 .map_err(|e| Error::new(e))?;
+
+            // Sync State
+            sync_lobby_state(&mut lobby.players, game);
+
+            // Save
+            db.lobbies().update_one(
+                doc! { "_id": lobby.id },
+                doc! { 
+                    "$set": { 
+                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                    } 
+                },
+                None
+            ).await?;
+
+            Ok(lobby)
+        } else {
+            Err(Error::new("Lobby not found"))
+        }
+    }
+
+    /// Use a card from hand
+    async fn use_card(&self, ctx: &Context<'_>, code: String, username: String, card_id: String) -> Result<Lobby> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+
+        if let Some(mut lobby) = lobby_opt {
+            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+
+            // Find player index
+            let player_idx = game.players.iter().position(|p| p.name == username)
+                .ok_or_else(|| Error::new("Player not found in game"))?;
+
+            // Try to use as Here & Now card first, then Chance card
+            let res = game.use_here_and_now_card(player_idx, card_id.clone());
+            
+            if res.is_err() {
+                // Try Chance card
+                game.use_chance_card(player_idx, card_id)
+                    .map_err(|e| Error::new(e))?;
+            }
 
             // Sync State
             sync_lobby_state(&mut lobby.players, game);

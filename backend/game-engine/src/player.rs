@@ -10,9 +10,10 @@ pub struct Player {
     pub passport: Passport,
     pub in_jail: bool,
     pub jail_turns: u8,
-    pub get_out_of_jail_free: bool, // (Șansă) - păstrabil
+    pub get_out_of_jail_free: bool, // (Șansă) - păstrabil (kept for compatibility)
 
     pub here_and_now_cards: Vec<HereAndNowCard>, // în mână, păstrabile oricând
+    pub chance_cards: Vec<crate::cards::ChanceCard>, // în mână, păstrabile (ex: Ieșire închisoare)
 
     // Efecte Here&Now "armate" / păstrate ca stare (simplificare console)
     pub say_no_cards: u8,
@@ -37,6 +38,7 @@ impl Player {
             jail_turns: 0,
             get_out_of_jail_free: false,
             here_and_now_cards: Vec::new(),
+            chance_cards: Vec::new(),
 
             say_no_cards: 0,
             intercept_purchase_ready: false,

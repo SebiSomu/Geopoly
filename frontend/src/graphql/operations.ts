@@ -106,6 +106,14 @@ export const GET_LOBBY_QUERY = gql`
           column
           destinationId
         }
+        hereAndNowCards {
+          id
+          description
+        }
+        chanceCards {
+          id
+          description
+        }
       }
     }
   }
@@ -161,6 +169,14 @@ export const RESOLVE_AIRPORT_DECISION_MUTATION = gql`
 export const RESOLVE_AIRPORT_DESTINATION_MUTATION = gql`
   mutation ResolveAirportDestination($code: String!, $username: String!, $targetPosition: Int!) {
     resolveAirportDestination(code: $code, username: $username, targetPosition: $targetPosition) {
+      code
+    }
+  }
+`
+
+export const USE_CARD_MUTATION = gql`
+  mutation UseCard($code: String!, $username: String!, $cardId: String!) {
+    useCard(code: $code, username: $username, cardId: $cardId) {
       code
     }
   }

@@ -126,18 +126,17 @@ const processedStamps = computed(() => {
       let y = 0;
       
       if (p.column === 'left') {
+        const overlap = leftCount === 0 ? 0 : 5;
         // Zig-zag: Even index in column is RIGHT, Odd is LEFT
         x = (leftCount % 2 === 0) ? (COL_WIDTH - diameterPx) : 0;
-        // y will now be used as 'bottom' offset
-        y = leftUsedHeight;
-        const overlap = leftCount === 0 ? 0 : 5;
-        leftUsedHeight += (diameterPx - overlap); 
+        y = leftUsedHeight - overlap; 
+        leftUsedHeight = y + diameterPx; 
         leftCount++;
       } else {
-        x = (rightCount % 2 === 0) ? (COL_WIDTH - diameterPx) : 0;
-        y = rightUsedHeight;
         const overlap = rightCount === 0 ? 0 : 5;
-        rightUsedHeight += (diameterPx - overlap);
+        x = (rightCount % 2 === 0) ? (COL_WIDTH - diameterPx) : 0;
+        y = rightUsedHeight - overlap;
+        rightUsedHeight = y + diameterPx;
         rightCount++;
       }
       
@@ -274,12 +273,12 @@ defineExpose({ clearStamps, stamps: processedStamps });
 
 .passport-body {
   width: 250px;
-  height: 344px;
+  height: 320px;
   background-color: #f5dcd7;
   border-radius: 12px;
   display: flex;
   justify-content: center;
-  padding: 12px;
+  padding: 0;
   gap: 12px;
   box-shadow: 
     0 10px 30px rgba(0, 0, 0, 0.2),

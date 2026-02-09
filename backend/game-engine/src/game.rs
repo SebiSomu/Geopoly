@@ -412,15 +412,10 @@ impl Game {
         if buy {
             // Găsește destinația pentru a crea ștampila
             if let Some(dest) = self.board.find_destination_by_id(dest_id) {
+                let dest = dest.clone();
                 if self.players[player_idx].pay_money(price) {
-                    let stamp = Stamp::from_destination(&dest);
-                    let dest_color = dest.color.clone();
-                    
-                    self.players[player_idx].passport.add_stamp(stamp);
-                    println!("{}", format!("✅ {} a cumpărat destinația și a primit stampila!", self.players[player_idx].name).green());
-
-                    // Verifică câștig
-                    if self.check_and_handle_win(player_idx) {
+                    // Cumpărarea proprietății (include verificare set și win)
+                    if self.acquire_property(player_idx, &dest) {
                         self.step = GameStep::WaitingForRoll;
                         return Ok(TurnResult {
                             die1: 0, die2: 0,
@@ -431,14 +426,6 @@ impl Game {
                             turn_ends: true,
                             current_player_index: self.current_player_idx as u8,
                         });
-                    }
-
-                    // Verifică set de culoare pentru bonus First Class
-                    if let Some(color_set) = self.board.color_sets.get(&dest_color) {
-                        if self.players[player_idx].has_color_set(color_set) {
-                            println!("{}", "🎉 Ai completat setul de culoare! Primești o stampilă Clasa Întâi GRATIS!".bright_green());
-                            self.give_first_class_stamp(player_idx, true);
-                        }
                     }
                 } else {
                     println!("{}", "Nu ai suficienți bani!".red());
@@ -482,9 +469,10 @@ impl Game {
                         stealer_idx = Some(i);
 
                         self.players[i].steal_first_class_ready = false;
-                        self.players[i].here_and_now_cards.retain(|c| {
-                            !matches!(c.action, HereAndNowCardAction::StealFirstClass)
-                        });
+                        if let Some(pos) = self.players[i].here_and_now_cards.iter().position(|c| matches!(c.action, HereAndNowCardAction::StealFirstClass)) {
+                            let card = self.players[i].here_and_now_cards.remove(pos);
+                            self.here_and_now_deck.discard(card);
+                        }
                         break;
                     }
                 }
@@ -557,47 +545,132 @@ impl Game {
 
     /// Rezolvă alegerea destinației de zbor
     pub fn resolve_airport_destination(&mut self, target_position: u8) -> Result<TurnResult, String> {
-        if self.step != GameStep::WaitingForAirportDestination {
-            return Err("Not waiting for airport destination".to_string());
+        let idx = self.current_player_idx;
+        if !matches!(self.step, GameStep::WaitingForAirportDestination) {
+            return Err("Nu ești în etapa de a alege destinația de zbor!".to_string());
         }
 
-        let player_idx = self.current_player_idx;
-        let board_size = self.board.total_spaces();
-        
-        if target_position as usize >= board_size {
-            return Err("Invalid destination position".to_string());
-        }
+        self.players[idx].position = target_position as usize;
+        println!("🛬 {} a aterizat pe poziția {}!", self.players[idx].name, target_position);
 
-        // Teleportare (nu se colectează M200 la trecerea prin START conform regulii)
-        self.players[player_idx].move_to(target_position as usize);
-        println!("✈️ Jucătorul a zburat la poziția {}", target_position);
-
-        // Declanșăm logica de aterizare pe noul spațiu
+        self.step = GameStep::WaitingForRoll; // Reset implicitly for now
         self.handle_landing();
 
-        // Verificăm dacă am ajuns într-o stare de așteptare decizie
-        let turn_ends = match self.step {
-            GameStep::WaitingForPurchaseDecision { .. } | 
-            GameStep::WaitingForFirstClassDecision |
-            GameStep::WaitingForAirportDecision |
-            GameStep::WaitingForAirportDestination => false,
-            _ => true,
-        };
-
-        if turn_ends {
-            self.step = GameStep::WaitingForRoll;
-            self.end_turn();
-        }
+        let turn_ends = matches!(self.step, GameStep::WaitingForRoll);
 
         Ok(TurnResult {
-            die1: 0, die2: 0,
+            die1: 0,
+            die2: 0,
+            is_double: false,
+            is_forced_deal: false,
+            new_position: self.players[idx].position as u8,
+            went_to_jail: false,
+            turn_ends,
+            current_player_index: idx as u8,
+        })
+    }
+
+    /// Folosește un cartonaș Here&Now din mână
+    pub fn use_here_and_now_card(&mut self, player_idx: usize, card_id: String) -> Result<TurnResult, String> {
+        let card_idx = self.players[player_idx].here_and_now_cards.iter().position(|c| c.id == card_id)
+            .ok_or_else(|| "Nu deții acest cartonaș!".to_string())?;
+
+        let card = self.players[player_idx].here_and_now_cards.remove(card_idx);
+        println!("🎭 {} folosește cartonașul: {}", self.players[player_idx].name, card.description);
+
+        self.execute_here_and_now_action(player_idx, card.action.clone())?;
+        self.here_and_now_deck.discard(card);
+
+        Ok(TurnResult {
+            die1: 0,
+            die2: 0,
             is_double: false,
             is_forced_deal: false,
             new_position: self.players[player_idx].position as u8,
             went_to_jail: false,
-            turn_ends,
+            turn_ends: false, 
             current_player_index: self.current_player_idx as u8,
         })
+    }
+
+    fn execute_here_and_now_action(&mut self, player_idx: usize, action: HereAndNowCardAction) -> Result<(), String> {
+        match action {
+            HereAndNowCardAction::MoveSteps(steps) => {
+                let board_size = self.board.spaces.len();
+                if self.players[player_idx].move_by(steps, board_size) {
+                    println!("💰 Ai trecut pe la START! Primești M200.");
+                    self.players[player_idx].add_money(200);
+                }
+                self.handle_landing();
+            }
+            HereAndNowCardAction::MoveAnywhere => {
+                if player_idx == self.current_player_idx {
+                    self.step = GameStep::WaitingForAirportDestination;
+                    println!("🚀 Alege orice destinație de pe tablă!");
+                }
+            }
+            HereAndNowCardAction::GetOutOfJailFree => {
+                if self.players[player_idx].in_jail {
+                    self.players[player_idx].release_from_jail();
+                    println!("🔓 Ai ieșit gratuit din închisoare!");
+                }
+            }
+            HereAndNowCardAction::SwapStamps => {
+                let my_stamp = self.players[player_idx].passport.remove_last_stamp();
+                if let Some(s1) = my_stamp {
+                    for i in 0..self.players.len() {
+                        if i != player_idx {
+                            if let Some(s2) = self.players[i].passport.remove_last_stamp() {
+                                println!("♻️ Schimb de ștampile între {} și {}!", self.players[player_idx].name, self.players[i].name);
+                                self.add_stamp_with_checks(player_idx, s2);
+                                self.add_stamp_with_checks(i, s1);
+                                return Ok(());
+                            }
+                        }
+                    }
+                    self.players[player_idx].passport.add_stamp(s1);
+                }
+            }
+            HereAndNowCardAction::TakeAllLastStamps => {
+                for i in 0..self.players.len() {
+                    if i != player_idx {
+                        if let Some(stamp) = self.players[i].passport.remove_last_stamp() {
+                             println!("🚫 Ștampila {} a lui {} a fost scoasă din pașaport!", stamp.name, self.players[i].name);
+                        }
+                    }
+                }
+            }
+            HereAndNowCardAction::CollectFromRichest => {
+                let mut richest_idx = 0;
+                let mut max_stamps = 0;
+                for (i, p) in self.players.iter().enumerate() {
+                    let count = p.passport.left_column.len() + p.passport.right_column.len();
+                    if count > max_stamps {
+                        max_stamps = count;
+                        richest_idx = i;
+                    }
+                }
+                if richest_idx != player_idx {
+                    let amount = 200;
+                    if self.players[richest_idx].money >= amount {
+                        self.players[richest_idx].pay_money(amount);
+                        self.players[player_idx].add_money(amount);
+                        println!("💰 {} (cel mai bogat) ți-a plătit M200!", self.players[richest_idx].name);
+                    } else {
+                         let money = self.players[richest_idx].money;
+                         self.players[richest_idx].pay_money(money);
+                         self.players[player_idx].add_money(money);
+                         println!("💰 {} ți-a plătit tot ce avea (M{})!", self.players[richest_idx].name, money);
+                    }
+                }
+            }
+            HereAndNowCardAction::InterceptPurchase => self.players[player_idx].intercept_purchase_ready = true,
+            HereAndNowCardAction::SayNo => self.players[player_idx].say_no_cards += 1,
+            HereAndNowCardAction::DiscountPurchase => self.players[player_idx].discount_purchase_ready = true,
+            HereAndNowCardAction::CollectTax => self.players[player_idx].collect_tax_ready = true,
+            HereAndNowCardAction::StealFirstClass => self.players[player_idx].steal_first_class_ready = true,
+        }
+        Ok(())
     }
 
     fn end_turn(&mut self) {
@@ -684,6 +757,163 @@ impl Game {
         false
     }
 
+    /// Folosește un cartonaș Șansă din mână (ex: Ieșire din închisoare)
+    pub fn use_chance_card(&mut self, player_idx: usize, card_id: String) -> Result<TurnResult, String> {
+        let card_idx = self.players[player_idx].chance_cards.iter().position(|c| c.id == card_id)
+            .ok_or_else(|| "Nu deții acest cartonaș!".to_string())?;
+
+        let card = self.players[player_idx].chance_cards.remove(card_idx);
+        println!("🎲 {} folosește cartonașul Șansă: {}", self.players[player_idx].name, card.description);
+
+        self.execute_chance_action(player_idx, card.action.clone())?;
+        self.chance_deck.discard(card);
+
+        Ok(TurnResult {
+            die1: 0,
+            die2: 0,
+            is_double: false,
+            is_forced_deal: false,
+            new_position: self.players[player_idx].position as u8,
+            went_to_jail: false,
+            turn_ends: false, 
+            current_player_index: self.current_player_idx as u8,
+        })
+    }
+
+    fn execute_chance_action(&mut self, idx: usize, action: ChanceCardAction) -> Result<(), String> {
+        match action {
+            ChanceCardAction::CollectMoney(amount) => {
+                self.players[idx].add_money(amount);
+                println!("{}", format!("Primești M{}", amount).green());
+            }
+
+            ChanceCardAction::PayHospital => {
+                let amount = 200;
+                if !self.players[idx].pay_money(amount) {
+                    println!("{}", "Nu ai suficienți bani!".red());
+                    self.handle_bankruptcy(idx, None);
+                } else {
+                    println!("{}", format!("Plătești M{}", amount).yellow());
+                }
+            }
+
+            ChanceCardAction::FirstClassBonus => {
+                let count = self.players[idx]
+                    .passport
+                    .all_stamps()
+                    .iter()
+                    .filter(|s| s.name.to_uppercase().contains("FIRST CLASS"))
+                    .count() as u32;
+
+                let gain = 40 * count;
+                self.players[idx].add_money(gain);
+                println!("{}", format!("Ai {} ștampile First Class => primești M{}", count, gain).bright_green());
+            }
+
+            ChanceCardAction::CollectFromEachPlayer(amount) => {
+                println!("{}", format!("Colectezi M{} de la fiecare jucător", amount).green());
+                for i in 0..self.players.len() {
+                    if i != idx {
+                        if self.players[i].pay_money(amount) {
+                            self.players[idx].add_money(amount);
+                        } else {
+                            println!("{}", format!("{} nu are bani suficienți!", self.players[i].name).yellow());
+                        }
+                    }
+                }
+            }
+
+            ChanceCardAction::MoveSteps(steps) => {
+                self.move_player(steps);
+                self.handle_landing();
+            }
+
+            ChanceCardAction::AdvanceToStart => {
+                self.players[idx].move_to(0);
+                self.players[idx].add_money(200);
+                println!("{}", "Avansezi la START și colectezi M200.".bright_green());
+            }
+
+            ChanceCardAction::GoToJail => {
+                self.players[idx].send_to_jail();
+                println!("{}", "Mergi direct la închisoare! (Fără START)".red());
+            }
+
+            ChanceCardAction::GetOutOfJailFree => {
+                if self.players[idx].in_jail {
+                    self.players[idx].release_from_jail();
+                    println!("🔓 Ai ieșit gratuit din închisoare!");
+                } else {
+                    // Dacă îl "folosește" când nu e în închisoare (probabil din greșeală sau UI a permis)
+                    // Îl punem la loc dacă nu e cazul sau doar dăm mesaj
+                    println!("Nu ești în închisoare!");
+                }
+            }
+
+            ChanceCardAction::RerollOneDie => {
+                let mut rng = rand::thread_rng();
+                let d = rng.gen_range(1..=6);
+                println!("{}", format!("Arunci încă un zar: {}. Te muți {} spații.", d, d).cyan());
+                self.move_player(d);
+                self.handle_landing();
+            }
+
+            ChanceCardAction::DiceChallenge => {
+                let opponent = (0..self.players.len()).find(|&i| i != idx);
+                if let Some(opp) = opponent {
+                    let mut rng = rand::thread_rng();
+                    let my = rng.gen_range(1..=6);
+                    let his = rng.gen_range(1..=6);
+                    println!("{}", format!("Duel zaruri: tu={} vs {}={}", my, self.players[opp].name, his).bright_cyan());
+
+                    if my > his {
+                        println!("{}", format!("{} plătește M100 către tine.", self.players[opp].name).green());
+                        if self.players[opp].pay_money(100) {
+                            self.players[idx].add_money(100);
+                        }
+                    } else if his > my {
+                        println!("{}", format!("Tu plătești M100 către {}.", self.players[opp].name).yellow());
+                        if self.players[idx].pay_money(100) {
+                            self.players[opp].add_money(100);
+                        }
+                    } else {
+                        println!("Egalitate! Nimeni nu plătește.");
+                    }
+                }
+            }
+            ChanceCardAction::SwapTwoPlayersStamps => {
+                // Simplificat: primii doi jucători diferiți de robot? sau primii doi în general
+                 if self.players.len() >= 2 {
+                     let (idx1, idx2) = (0, 1);
+                     let s1 = self.players[idx1].passport.remove_last_stamp();
+                     let s2 = self.players[idx2].passport.remove_last_stamp();
+                     
+                     if let Some(stamp1) = s1 { self.players[idx2].passport.add_stamp(stamp1); }
+                     if let Some(stamp2) = s2 { self.players[idx1].passport.add_stamp(stamp2); }
+                     
+                     println!("♻️ Schimb de ștampile între {} și {}!", self.players[idx1].name, self.players[idx2].name);
+                 }
+            }
+            ChanceCardAction::StealStampAndPay => {
+                 let target = (0..self.players.len()).find(|&i| i != idx);
+                 if let Some(t_idx) = target {
+                     if let Some(stamp) = self.players[t_idx].passport.remove_last_stamp() {
+                         // Plătim valoarea (estimată la M100 pentru simplitate, regulile pot varia)
+                         if self.players[idx].pay_money(150) {
+                             self.players[t_idx].add_money(150);
+                             let stamp_name = stamp.name.clone();
+                             self.add_stamp_with_checks(idx, stamp);
+                             println!("💸 Ai furat ștampila {} de la {} pentru M150!", stamp_name, self.players[t_idx].name);
+                         } else {
+                             self.players[t_idx].passport.add_stamp(stamp); // returnăm
+                             println!("Nu ai destui bani să plătești ștampila!");
+                         }
+                     }
+                 }
+            }
+        }
+        Ok(())
+    }
     fn handle_landing(&mut self) {
         let position = self.players[self.current_player_idx].position;
         let space = self.board.get_space(position).clone();
@@ -766,9 +996,10 @@ impl Game {
                     self.players[self.current_player_idx].collect_tax_ready = false;
 
                     // Găsim și ștergem cardul din mână
-                    self.players[self.current_player_idx].here_and_now_cards.retain(|c| {
-                        !matches!(c.action, HereAndNowCardAction::CollectTax)
-                    });
+                    if let Some(pos) = self.players[self.current_player_idx].here_and_now_cards.iter().position(|c| matches!(c.action, HereAndNowCardAction::CollectTax)) {
+                        let card = self.players[self.current_player_idx].here_and_now_cards.remove(pos);
+                        self.here_and_now_deck.discard(card);
+                    }
 
                     return;
                 }
@@ -798,9 +1029,10 @@ impl Game {
                 self.players[self.current_player_idx].discount_purchase_ready = false;
 
                 // Găsim și ștergem cardul din mână
-                self.players[self.current_player_idx].here_and_now_cards.retain(|c| {
-                    !matches!(c.action, HereAndNowCardAction::DiscountPurchase)
-                });
+                if let Some(pos) = self.players[self.current_player_idx].here_and_now_cards.iter().position(|c| matches!(c.action, HereAndNowCardAction::DiscountPurchase)) {
+                    let card = self.players[self.current_player_idx].here_and_now_cards.remove(pos);
+                    self.here_and_now_deck.discard(card);
+                }
             }
 
             // ✅ INTERCEPT PURCHASE: alt jucător interceptează cumpărarea
@@ -813,9 +1045,10 @@ impl Game {
                         self.players[i].intercept_purchase_ready = false;
 
                         // Găsim și ștergem cardul din mână
-                        self.players[i].here_and_now_cards.retain(|c| {
-                            !matches!(c.action, HereAndNowCardAction::InterceptPurchase)
-                        });
+                        if let Some(pos) = self.players[i].here_and_now_cards.iter().position(|c| matches!(c.action, HereAndNowCardAction::InterceptPurchase)) {
+                            let card = self.players[i].here_and_now_cards.remove(pos);
+                            self.here_and_now_deck.discard(card);
+                        }
 
                         break;
                     }
@@ -918,176 +1151,14 @@ impl Game {
 
         let idx = self.current_player_idx;
 
-        match card.action {
-            ChanceCardAction::CollectMoney(amount) => {
-                self.players[idx].add_money(amount);
-                println!("{}", format!("Primești M{}", amount).green());
-            }
-
-            ChanceCardAction::PayHospital => {
-                let amount = 200;
-                if !self.players[idx].pay_money(amount) {
-                    println!("{}", "Nu ai suficienți bani!".red());
-                    self.handle_bankruptcy(idx, None);
-                } else {
-                    println!("{}", format!("Plătești M{}", amount).yellow());
-                }
-            }
-
-            ChanceCardAction::FirstClassBonus => {
-                // numărăm ștampilele FirstClass din pașaport
-                let count = self.players[idx]
-                    .passport
-                    .all_stamps()
-                    .iter()
-                    .filter(|s| s.name == "FIRST CLASS")
-                    .count() as u32;
-
-                let gain = 40 * count;
-                self.players[idx].add_money(gain);
-                println!("{}", format!("Ai {} ștampile First Class => primești M{}", count, gain).bright_green());
-            }
-
-            ChanceCardAction::CollectFromEachPlayer(amount) => {
-                println!("{}", format!("Colectezi M{} de la fiecare jucător", amount).green());
-                for i in 0..self.players.len() {
-                    if i != idx {
-                        if self.players[i].pay_money(amount) {
-                            self.players[idx].add_money(amount);
-                        } else {
-                            // dacă nu poate plăti, îl lăsăm simplificat (ca restul engine-ului)
-                            println!("{}", format!("{} nu are bani suficienți!", self.players[i].name).yellow());
-                        }
-                    }
-                }
-            }
-
-            ChanceCardAction::MoveSteps(steps) => {
-                self.move_player(steps);
-                self.handle_landing();
-                if self.game_over { return; }
-            }
-
-            ChanceCardAction::AdvanceToStart => {
-                self.players[idx].move_to(0);
-                self.players[idx].add_money(200);
-                println!("{}", "Avansezi la START și colectezi M200.".bright_green());
-            }
-
-            ChanceCardAction::GoToJail => {
-                self.players[idx].send_to_jail();
-                println!("{}", "Mergi direct la închisoare! (Fără START)".red());
-            }
-
-            ChanceCardAction::GetOutOfJailFree => {
-                self.players[idx].get_out_of_jail_free = true;
-                println!("{}", "Primești cartonașul 'Ieșire gratis din închisoare' (Șansă) și îl păstrezi!".bright_green());
-                // NU discard
-                return;
-            }
-
-            ChanceCardAction::RerollOneDie => {
-                // simplificare: reroll 1 die => mutăm cu 1..6
-                let mut rng = rand::thread_rng();
-                let d = rng.gen_range(1..=6);
-                println!("{}", format!("Arunci încă un zar: {}. Te muți {} spații.", d, d).cyan());
-                self.move_player(d);
-                self.handle_landing();
-                if self.game_over { return; }
-            }
-
-            ChanceCardAction::DiceChallenge => {
-                // simplificat: alegem primul adversar disponibil
-                let opponent = (0..self.players.len()).find(|&i| i != idx);
-                if let Some(opp) = opponent {
-                    let mut rng = rand::thread_rng();
-                    let my = rng.gen_range(1..=6);
-                    let his = rng.gen_range(1..=6);
-                    println!("{}", format!("Duel zaruri: tu={} vs {}={}", my, self.players[opp].name, his).bright_cyan());
-
-                    if my > his {
-                        println!("{}", format!("{} plătește M100 către tine.", self.players[opp].name).green());
-                        if self.players[opp].pay_money(100) {
-                            self.players[idx].add_money(100);
-                        }
-                    } else if his > my {
-                        println!("{}", "Tu plătești M100 adversarului.".yellow());
-                        if self.players[idx].pay_money(100) {
-                            self.players[opp].add_money(100);
-                        } else {
-                            self.handle_bankruptcy(idx, Some(opp));
-                        }
-                    } else {
-                        println!("{}", "Egalitate! Nimeni nu plătește.".yellow());
-                    }
-                }
-            }
-
-            ChanceCardAction::StealStampAndPay => {
-                // alegem un adversar cu ștampile
-                let opp = self.players.iter().enumerate()
-                    .find(|(i, p)| *i != idx && p.passport.stamp_count() > 0)
-                    .map(|(i, _)| i);
-
-                if let Some(opp_idx) = opp {
-                    if let Some(stolen) = self.players[opp_idx].passport.remove_last_stamp() {
-                        // "valoarea integrală" = price-ul destinației, iar FirstClass = 100
-                        let price = if stolen.name == "FIRST CLASS" {
-                            100
-                        } else if let Some(dest_id) = stolen.destination_id {
-                            self.board
-                                .find_destination_by_id(dest_id)
-                                .map(|d| d.price)
-                                .unwrap_or(100)
-                        } else {
-                            100
-                        };
-
-                        println!("{}", format!("Furi '{}' de la {} și plătești M{}.", stolen.name, self.players[opp_idx].name, price).bright_magenta());
-
-                        if self.players[idx].pay_money(price) {
-                            self.players[opp_idx].add_money(price);
-                            self.players[idx].passport.add_stamp(stolen);
-                            self.check_and_handle_win(idx);
-                            if self.game_over { return; }
-                        } else {
-                            println!("{}", "Nu ai bani să plătești valoarea! Acțiunea eșuează.".red());
-                            // punem ștampila la loc
-                            self.players[opp_idx].passport.add_stamp(stolen);
-                        }
-                    }
-                } else {
-                    println!("{}", "Niciun adversar nu are ștampile.".yellow());
-                }
-            }
-
-            ChanceCardAction::SwapTwoPlayersStamps => {
-                // simplificat: alegem primii 2 jucători diferiți de tine dacă există
-                let mut candidates: Vec<usize> = (0..self.players.len()).filter(|&i| i != idx && self.players[i].passport.stamp_count() > 0).collect();
-                if candidates.len() >= 2 {
-                    let a = candidates.remove(0);
-                    let b = candidates.remove(0);
-
-                    let sa = self.players[a].passport.remove_last_stamp();
-                    let sb = self.players[b].passport.remove_last_stamp();
-
-                    if let (Some(sa), Some(sb)) = (sa, sb) {
-                        println!("{}", format!("{} și {} își schimbă ultimele ștampile: '{}' <-> '{}'",
-                                               self.players[a].name, self.players[b].name, sa.name, sb.name).bright_magenta());
-
-                        self.players[a].passport.add_stamp(sb);
-                        self.players[b].passport.add_stamp(sa);
-
-                        if self.check_and_handle_win(a) { return; }
-                        if self.check_and_handle_win(b) { return; }
-                    }
-                } else {
-                    println!("{}", "Nu există 2 jucători eligibili pentru schimb.".yellow());
-                }
-            }
+        if card.can_keep {
+            self.players[idx].chance_cards.push(card);
+            println!("{}", "✅ Cartonaș păstrat în mână (folosibil oricând).".bright_green());
+        } else {
+            let action = card.action.clone();
+            let _ = self.execute_chance_action(idx, action);
+            self.chance_deck.discard(card);
         }
-
-        self.chance_deck.discard(card);
     }
 
     fn handle_business_deal(&mut self, target_idx: Option<usize>) {
@@ -1119,8 +1190,8 @@ impl Game {
                     println!("{}", format!("Schimbi '{}' cu '{}' de la {}",
                                            my_stamp.name, opp_stamp.name, self.players[opp_idx].name).bright_magenta());
 
-                    self.players[current_player_idx].passport.add_stamp(opp_stamp);
-                    self.players[opp_idx].passport.add_stamp(my_stamp);
+                    self.add_stamp_with_checks(current_player_idx, opp_stamp);
+                    self.add_stamp_with_checks(opp_idx, my_stamp);
 
                     // Verifică câștig pentru ambii jucători
                     if self.check_and_handle_win(current_player_idx) {
@@ -1144,16 +1215,39 @@ impl Game {
             if self.players[i].money >= 20 {
                 println!("{} cumpără la licitație pentru M20!", self.players[i].name);
                 self.players[i].pay_money(20);
-                let stamp = Stamp::from_destination(dest);
-                self.players[i].passport.add_stamp(stamp);
-
-                // Verifică câștig după licitație
-                self.check_and_handle_win(i);
+                self.acquire_property(i, dest);
                 return;
             }
         }
 
         println!("{}", "Nimeni nu vrea destinația!".yellow());
+    }
+
+    /// Helper pentru a adăuga o proprietate unui jucător, a verifica seturile și a verifica victoria
+    fn acquire_property(&mut self, player_idx: usize, dest: &Destination) -> bool {
+        let stamp = Stamp::from_destination(dest);
+        println!("{}", format!("✅ {} a cumpărat destinația {} și a primit stampila!", self.players[player_idx].name, dest.name).green());
+        self.add_stamp_with_checks(player_idx, stamp)
+    }
+
+    /// Adaugă o ștampilă și verifică seturi/victorie
+    fn add_stamp_with_checks(&mut self, player_idx: usize, stamp: Stamp) -> bool {
+        let dest_id = stamp.destination_id;
+        self.players[player_idx].passport.add_stamp(stamp);
+
+        // Dacă e o destinație, verificăm dacă s-a completat un set
+        if let Some(id) = dest_id {
+            if let Some(dest) = self.board.find_destination_by_id(id) {
+                if let Some(color_set) = self.board.color_sets.get(&dest.color) {
+                    if self.players[player_idx].has_color_set(color_set) {
+                        println!("{}", "🎉 Ai completat setul de culoare! Primești o stampilă Clasa Întâi GRATIS!".bright_green());
+                        self.give_first_class_stamp(player_idx, true);
+                    }
+                }
+            }
+        }
+
+        self.check_and_handle_win(player_idx)
     }
 
     fn give_first_class_stamp(&mut self, player_idx: usize, free: bool) {
@@ -1163,7 +1257,6 @@ impl Game {
         }
 
         let stamp = Stamp::first_class();
-
         if self.players[player_idx].passport.add_stamp(stamp) {
             self.first_class_stamps_available -= 1;
 
@@ -1173,9 +1266,7 @@ impl Game {
                 println!("{}", "✅ Ai cumpărat stampila Clasa Întâi!".green());
             }
 
-            // Verificare imediată de câștig
             self.check_and_handle_win(player_idx);
-
         } else {
             println!("{}", "⚠️ Pașaportul tău este plin!".red());
             if !free {
@@ -1191,10 +1282,7 @@ impl Game {
             if let Some(creditor) = creditor_idx {
                 println!("{}", format!("Ultima ștampilă '{}' merge la {}",
                                        stamp.name, self.players[creditor].name).red());
-                self.players[creditor].passport.add_stamp(stamp);
-                
-                // Verifică dacă creditorul a câștigat prin primirea acestei ștampile
-                self.check_and_handle_win(creditor);
+                self.add_stamp_with_checks(creditor, stamp);
             } else {
                 println!("{}", format!("Ultima ștampilă '{}' revine pe tablă", stamp.name).red());
             }
