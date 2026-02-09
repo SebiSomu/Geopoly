@@ -80,6 +80,12 @@ export const GET_LOBBY_QUERY = gql`
         lastDie1
         lastDie2
         awaitingAction
+        pendingPurchase {
+          destId
+          destName
+          price
+        }
+        pendingFirstClass
       }
       players {
         username
@@ -87,6 +93,11 @@ export const GET_LOBBY_QUERY = gql`
         position
         inJail
         consecutiveDoubles
+        money
+        properties {
+          name
+          color
+        }
       }
     }
   }
@@ -110,6 +121,22 @@ export const ROLL_DICE_MUTATION = gql`
 export const RESOLVE_FORCED_DEAL_MUTATION = gql`
   mutation ResolveForcedDeal($code: String!, $username: String!, $action: String!) {
     resolveForcedDeal(code: $code, username: $username, action: $action) {
+      code
+    }
+  }
+`
+
+export const RESOLVE_PURCHASE_MUTATION = gql`
+  mutation ResolvePurchase($code: String!, $username: String!, $buy: Boolean!) {
+    resolvePurchase(code: $code, username: $username, buy: $buy) {
+      code
+    }
+  }
+`
+
+export const RESOLVE_FIRST_CLASS_MUTATION = gql`
+  mutation ResolveFirstClass($code: String!, $username: String!, $buy: Boolean!) {
+    resolveFirstClass(code: $code, username: $username, buy: $buy) {
       code
     }
   }

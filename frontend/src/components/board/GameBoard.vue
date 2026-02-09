@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, watchEffect } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
-import { GET_LOBBY_QUERY, ROLL_DICE_MUTATION, RESOLVE_FORCED_DEAL_MUTATION } from '../../graphql/operations'
+import { GET_LOBBY_QUERY, ROLL_DICE_MUTATION, RESOLVE_FORCED_DEAL_MUTATION, RESOLVE_PURCHASE_MUTATION, RESOLVE_FIRST_CLASS_MUTATION } from '../../graphql/operations'
 import Passport from './Passport.vue'
 import Stamp from './Stamp.vue'
 import GameDice from './GameDice.vue'
@@ -23,10 +23,8 @@ const username = localStorage.getItem('username') || '';
 
 const { mutate: rollDiceMutation } = useMutation(ROLL_DICE_MUTATION);
 const { mutate: resolveForcedDealMutation } = useMutation(RESOLVE_FORCED_DEAL_MUTATION);
-
-
-
-
+const { mutate: resolvePurchaseMutation } = useMutation(RESOLVE_PURCHASE_MUTATION);
+const { mutate: resolveFirstClassMutation } = useMutation(RESOLVE_FIRST_CLASS_MUTATION);
 
 // Game simulation state (local representation of server state)
 const gameState = reactive({
@@ -36,6 +34,8 @@ const gameState = reactive({
     name: string;
     in_jail: boolean;
     consecutive_doubles: number;
+    money: number;
+    properties: Array<{ name: string; color: string }>;
   }>,
   currentTurnIndex: 0,
   diceValue1: 1,
@@ -43,8 +43,13 @@ const gameState = reactive({
   isRolling: false,
   forcedDealActive: false,
   isMoving: false,
-  awaitingAction: false
+  awaitingAction: false,
+  pendingPurchase: null as { destId: number; destName: string; price: number } | null,
+  pendingFirstClass: false,
+  moneyNotifications: [] as Array<{ id: number; amount: string; type: 'plus' | 'minus'; x: number; y: number; playerName: string }>
 })
+
+let notificationId = 0;
 
 // Sync local state with server data
 watchEffect(() => {
@@ -55,27 +60,56 @@ watchEffect(() => {
     // Sync players
     if (lobby.players) {
       // Map server players to local format
-      gameState.players = lobby.players.map((p: any) => ({
+      const newPlayers = lobby.players.map((p: any) => ({
         character: p.character as 'seal' | 'capybara' | 'cat' | 'dog',
         position: p.position || 0,
         name: p.username,
         in_jail: p.inJail || false,
-        consecutive_doubles: p.consecutiveDoubles || 0
+        consecutive_doubles: p.consecutiveDoubles || 0,
+        money: p.money || 1500,
+        properties: p.properties || []
       }))
+
+      // Detect money changes for animations
+      newPlayers.forEach((np: any) => {
+        const oldP = gameState.players.find(p => p.name === np.name);
+        if (oldP && oldP.money !== np.money) {
+          const diff = np.money - oldP.money;
+          const type = diff > 0 ? 'plus' : 'minus';
+          const amountStr = (diff > 0 ? '+' : '-') + 'M' + Math.abs(diff);
+          
+          // Add notification
+          const id = notificationId++;
+          // We'll show it near the player card in the sidebar or just globally distributed
+          gameState.moneyNotifications.push({
+            id,
+            amount: amountStr,
+            type,
+            x: 0, // Will be handled by CSS transition
+            y: 0,
+            playerName: np.name
+          });
+
+          // Remove after 2 seconds
+          setTimeout(() => {
+            gameState.moneyNotifications = gameState.moneyNotifications.filter(n => n.id !== id);
+          }, 2000);
+        }
+      });
+
+      gameState.players = newPlayers;
     }
     
     if (serverGameState) {
       // Sync turn and dice, BUT only if we are not currently animating a roll ourselves
-      // This prevents jitter if poll comes during animation
       if (!gameState.isRolling && !gameState.isMoving) {
         gameState.currentTurnIndex = serverGameState.currentTurnIndex
-        
-        // Only update dice if they changed (avoid random resets)
         if (serverGameState.lastDie1) gameState.diceValue1 = serverGameState.lastDie1
         if (serverGameState.lastDie2) gameState.diceValue2 = serverGameState.lastDie2
-        
         gameState.awaitingAction = serverGameState.awaitingAction
-        gameState.forcedDealActive = serverGameState.awaitingAction // Sync active state
+        gameState.forcedDealActive = serverGameState.awaitingAction
+        gameState.pendingPurchase = serverGameState.pendingPurchase || null
+        gameState.pendingFirstClass = serverGameState.pendingFirstClass || false
       }
     }
   }
@@ -343,6 +377,34 @@ const handleMoveN = async () => {
   }
 }
 
+// Handle Purchase Decision
+const handlePurchaseDecision = async (buy: boolean) => {
+  try {
+    await resolvePurchaseMutation({
+      code: props.code,
+      username: username,
+      buy: buy
+    })
+    gameState.pendingPurchase = null
+  } catch (e) {
+    console.error("Purchase decision failed:", e)
+  }
+}
+
+// Handle First Class Decision
+const handleFirstClassDecision = async (buy: boolean) => {
+  try {
+    await resolveFirstClassMutation({
+      code: props.code,
+      username: username,
+      buy: buy
+    })
+    gameState.pendingFirstClass = false
+  } catch (e) {
+    console.error("First Class decision failed:", e)
+  }
+}
+
 // Get current player
 const currentPlayer = computed(() => gameState.players[gameState.currentTurnIndex])
 
@@ -352,9 +414,13 @@ const leftColumn = computed(() => boardSpaces.slice(11, 20))
 const topRow = computed(() => boardSpaces.slice(21, 30))
 const rightColumn = computed(() => boardSpaces.slice(31, 40))
 
-function getColorStyle(color?: keyof typeof COLORS): string {
-  if (!color) return ''
-  return COLORS[color]
+function getColorStyle(color?: string): string {
+  if (!color) return 'transparent'
+  if (color in COLORS) {
+    return COLORS[color as keyof typeof COLORS]
+  }
+  if (color === 'gray' || color === 'grey') return '#808080'
+  return color // Assume it might be a hex or actual color name
 }
 
 function getSpaceIcon(type: string): string {
@@ -369,7 +435,8 @@ function getSpaceIcon(type: string): string {
 </script>
 
 <template>
-  <div class="board-container">
+  <div class="game-layout">
+    <div class="board-container">
     <div class="board">
       <!-- Top row -->
       <div class="board-row top-row">
@@ -589,7 +656,7 @@ function getSpaceIcon(type: string): string {
           </div>
 
           <!-- Forced Deal Modal -->
-          <div v-if="gameState.forcedDealActive" class="forced-deal-modal">
+          <div v-if="gameState.forcedDealActive && isMyTurn" class="forced-deal-modal">
             <div class="modal-content">
               <h3>⚡ Forced Deal!</h3>
               <p>Choose your action:</p>
@@ -604,6 +671,38 @@ function getSpaceIcon(type: string): string {
             </div>
           </div>
 
+          <!-- Purchase Decision Modal -->
+          <div v-if="gameState.pendingPurchase && isMyTurn" class="purchase-modal">
+            <div class="modal-content">
+              <h3>🏠 Buy Property?</h3>
+              <p class="property-name">{{ gameState.pendingPurchase.destName }}</p>
+              <p class="property-price">Price: M{{ gameState.pendingPurchase.price }}</p>
+              <div class="modal-buttons">
+                <button class="modal-btn buy" @click="handlePurchaseDecision(true)">
+                  ✅ Buy
+                </button>
+                <button class="modal-btn skip" @click="handlePurchaseDecision(false)">
+                  ❌ Skip
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- First Class Decision Modal -->
+          <div v-if="gameState.pendingFirstClass && isMyTurn" class="first-class-modal">
+            <div class="modal-content">
+              <h3>✈️ First Class Stamp</h3>
+              <p>Buy a First Class stamp for M100?</p>
+              <div class="modal-buttons">
+                <button class="modal-btn buy" @click="handleFirstClassDecision(true)">
+                  ✅ Buy
+                </button>
+                <button class="modal-btn skip" @click="handleFirstClassDecision(false)">
+                  ❌ Skip
+                </button>
+              </div>
+            </div>
+          </div>
 
           
           <!-- Passport zone BOTTOM-LEFT -->
@@ -809,19 +908,318 @@ function getSpaceIcon(type: string): string {
       </div>
     </div>
   </div>
+
+  <!-- Right Side Player Info Panel -->
+  <div class="economy-panel">
+      <div class="panel-header">
+        <h2>💰 World Bank</h2>
+      </div>
+      
+      <!-- Global Money List -->
+      <div class="global-money-list">
+        <div 
+          v-for="(player, idx) in gameState.players" 
+          :key="'money-'+idx"
+          class="mini-player-card"
+          :class="{ 'me-gold': player.name === username }"
+        >
+          <div class="mini-info">
+            <div class="mini-token-box">
+              <GameToken :type="player.character" />
+            </div>
+            <span class="mini-name">{{ player.name }}</span>
+          </div>
+          <div class="mini-money-wrap">
+             <span class="mini-money">M{{ player.money }}</span>
+             <!-- Small floating animations within the card context -->
+             <TransitionGroup name="money-anim">
+               <span 
+                 v-for="note in gameState.moneyNotifications.filter(n => n.playerName === player.name)" 
+                 :key="note.id" 
+                 class="float-money"
+                 :class="note.type"
+               >
+                 {{ note.amount }}
+               </span>
+             </TransitionGroup>
+          </div>
+        </div>
+      </div>
+
+      <div class="portfolio-divider">
+        <h3>🏠 My Properties</h3>
+      </div>
+
+      <div class="my-portfolio">
+        <template v-for="player in gameState.players" :key="'props-'+player.name">
+          <div v-if="player.name === username" class="personal-props-area">
+            <div v-if="!player.properties || player.properties.length === 0" class="no-props-box">
+              You don't own any properties yet.
+            </div>
+            <div class="props-grid">
+              <div 
+                v-for="(prop, pIdx) in player.properties" 
+                :key="pIdx"
+                class="prop-pill"
+              >
+                <span class="prop-dot" :style="{ background: getColorStyle(prop.color) }"></span>
+                <span class="prop-label">{{ prop.name }}</span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+  </div>
+</div>
 </template>
 
 <style scoped>
 @import url('https://fonts.googleapis.com/css2?family=Oswald:wght@400;500;600;700&family=Roboto:wght@400;500;700&display=swap');
 
+.game-layout {
+  display: flex;
+  flex-direction: row;
+  min-height: 100vh;
+  background: #0a1628;
+  width: 100%;
+}
+
 .board-container {
+  flex: 1;
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 5px 15px 40px 15px; /* Shifting board up by adding more bottom padding */
-  min-height: 100vh;
-  background: #0a1628;
+  padding: 5px 15px 40px 15px;
   box-sizing: border-box;
+}
+
+.economy-panel {
+  width: 320px;
+  background: rgba(16, 32, 54, 0.95);
+  border-left: 1px solid rgba(255, 215, 0, 0.3);
+  display: flex;
+  flex-direction: column;
+  padding: 24px 16px;
+  height: 100vh;
+  box-sizing: border-box;
+  overflow-y: auto;
+  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
+  backdrop-filter: blur(10px);
+}
+
+.panel-header h2 {
+  font-family: 'Oswald', sans-serif;
+  color: #FFD700;
+  text-align: center;
+  margin-bottom: 24px;
+  letter-spacing: 2px;
+  text-transform: uppercase;
+}
+
+.global-money-list {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.mini-player-card {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 12px;
+  padding: 10px 14px;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  transition: all 0.3s ease;
+  position: relative;
+}
+
+.mini-player-card.me-gold {
+  border-color: rgba(255, 215, 0, 0.6);
+  background: rgba(255, 215, 0, 0.08);
+  box-shadow: inset 0 0 15px rgba(255, 215, 0, 0.05), 0 0 10px rgba(255, 215, 0, 0.1);
+}
+
+.mini-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.mini-token-box {
+  width: 32px;
+  height: 32px;
+  flex-shrink: 0;
+}
+
+.mini-name {
+  font-family: 'Oswald', sans-serif;
+  font-size: 16px;
+  color: white;
+  letter-spacing: 0.5px;
+}
+
+.mini-money-wrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+}
+
+.mini-money {
+  font-family: 'Roboto', sans-serif;
+  font-size: 18px;
+  color: #FFD700;
+  font-weight: 700;
+}
+
+/* Portfolio Section */
+.portfolio-divider {
+  border-top: 1px solid rgba(255, 255, 255, 0.1);
+  padding-top: 20px;
+  margin-bottom: 16px;
+}
+
+.portfolio-divider h3 {
+  font-family: 'Oswald', sans-serif;
+  color: #FFD700;
+  font-size: 14px;
+  text-transform: uppercase;
+  letter-spacing: 1.5px;
+  margin: 0;
+}
+
+.personal-props-area {
+  width: 100%;
+}
+
+.no-props-box {
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
+  font-size: 13px;
+  text-align: center;
+  padding: 20px;
+  background: rgba(255, 255, 255, 0.02);
+  border-radius: 12px;
+}
+
+.props-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(130px, 1fr));
+  gap: 8px;
+}
+
+.prop-pill {
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 6px 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  white-space: nowrap;
+  overflow: hidden;
+}
+
+.prop-label {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.9);
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Money Animations */
+.float-money {
+  position: absolute;
+  right: 0;
+  top: -20px;
+  font-weight: 800;
+  font-size: 18px;
+  pointer-events: none;
+  text-shadow: 0 2px 4px rgba(0, 0, 0, 0.5);
+  z-index: 10;
+}
+
+.float-money.plus {
+  color: #4CAF50;
+}
+
+.float-money.minus {
+  color: #f44336;
+}
+
+.money-anim-enter-active {
+  transition: all 0.5s ease-out;
+}
+.money-anim-leave-active {
+  transition: all 1.5s ease-in;
+}
+
+.money-anim-enter-from {
+  opacity: 0;
+  transform: translateY(20px);
+}
+
+.money-anim-enter-to {
+  opacity: 1;
+  transform: translateY(0);
+}
+
+.money-anim-leave-to {
+  opacity: 0;
+  transform: translateY(-40px);
+}
+
+
+
+/* Custom Scrollbar for props list */
+.props-list.scrollable::-webkit-scrollbar {
+  width: 4px;
+}
+.props-list.scrollable::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.05);
+}
+.props-list.scrollable::-webkit-scrollbar-thumb {
+  background: rgba(255, 215, 0, 0.3);
+  border-radius: 4px;
+}
+
+/* Sidebar styles */
+.prop-item {
+  font-size: 14px;
+  color: rgba(255, 255, 255, 0.9);
+  padding: 4px 8px;
+  background: rgba(255, 255, 255, 0.03);
+  border-radius: 4px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.prop-dot {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+}
+
+.no-props {
+  font-size: 13px;
+  color: rgba(255, 255, 255, 0.4);
+  font-style: italic;
+}
+
+/* Sidebar Animations */
+.sidebar-anim-enter-active,
+.sidebar-anim-leave-active {
+  transition: all 0.3s ease;
+}
+
+.sidebar-anim-enter-from,
+.sidebar-anim-leave-to {
+  transform: translateX(100%);
+  opacity: 0;
 }
 
 .board {
@@ -1667,6 +2065,72 @@ function getSpaceIcon(type: string): string {
 .modal-btn.move:hover {
   transform: translateY(-2px);
   box-shadow: 0 6px 20px rgba(245, 87, 108, 0.6);
+}
+
+/* Purchase and First Class modals - reuse forced-deal-modal base */
+.purchase-modal,
+.first-class-modal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 1000;
+  animation: fadeIn 0.3s ease-out;
+}
+
+.purchase-modal .modal-content,
+.first-class-modal .modal-content {
+  background: linear-gradient(145deg, #ffffff 0%, #f0f0f0 100%);
+  border-radius: 20px;
+  padding: 24px 32px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  border: 3px solid #ffd700;
+  text-align: center;
+}
+
+.purchase-modal h3,
+.first-class-modal h3 {
+  font-family: 'Oswald', sans-serif;
+  font-size: 24px;
+  color: #1976D2;
+  margin-bottom: 12px;
+}
+
+.property-name {
+  font-family: 'Oswald', sans-serif;
+  font-size: 20px;
+  color: #333;
+  font-weight: 600;
+}
+
+.property-price {
+  font-family: 'Roboto', sans-serif;
+  font-size: 18px;
+  color: #4CAF50;
+  font-weight: 700;
+  margin-bottom: 16px;
+}
+
+.modal-btn.buy {
+  background: linear-gradient(135deg, #4CAF50 0%, #2E7D32 100%);
+  color: white;
+  box-shadow: 0 4px 15px rgba(76, 175, 80, 0.4);
+}
+
+.modal-btn.buy:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(76, 175, 80, 0.6);
+}
+
+.modal-btn.skip {
+  background: linear-gradient(135deg, #9E9E9E 0%, #616161 100%);
+  color: white;
+  box-shadow: 0 4px 15px rgba(158, 158, 158, 0.4);
+}
+
+.modal-btn.skip:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(158, 158, 158, 0.6);
 }
 
 /* Positioned Tokens */

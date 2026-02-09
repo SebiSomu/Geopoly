@@ -9,11 +9,20 @@ use game_engine::game::{Game, GameStep};
 // --- GraphQL Objects for Display ---
 
 #[derive(SimpleObject)]
+pub struct PendingPurchase {
+    pub dest_id: u8,
+    pub dest_name: String,
+    pub price: u32,
+}
+
+#[derive(SimpleObject)]
 pub struct GameStateDisplay {
     pub current_turn_index: u8,
     pub last_die1: u8,
     pub last_die2: u8,
     pub awaiting_action: bool,
+    pub pending_purchase: Option<PendingPurchase>,
+    pub pending_first_class: bool,
 }
 
 #[ComplexObject]
@@ -21,14 +30,68 @@ impl Lobby {
     async fn game_state(&self) -> Option<GameStateDisplay> {
         if let Some(game) = &self.game {
             let (d1, d2) = game.last_dice.unwrap_or((1, 1));
+            
+            // Check for pending purchase
+            let pending_purchase = match &game.step {
+                GameStep::WaitingForPurchaseDecision { dest_id, price } => {
+                    // Find destination name from board
+                    let name = game.board.find_destination_by_id(*dest_id)
+                        .map(|d| d.name.clone())
+                        .unwrap_or_else(|| "Unknown".to_string());
+                    Some(PendingPurchase {
+                        dest_id: *dest_id,
+                        dest_name: name,
+                        price: *price,
+                    })
+                },
+                _ => None,
+            };
+            
+            let pending_first_class = game.step == GameStep::WaitingForFirstClassDecision;
+            
             Some(GameStateDisplay {
                 current_turn_index: game.current_player_idx as u8,
                 last_die1: d1,
                 last_die2: d2,
                 awaiting_action: game.step == GameStep::WaitingForForcedDeal,
+                pending_purchase,
+                pending_first_class,
             })
         } else {
             None
+        }
+    }
+}
+
+fn sync_lobby_state(players: &mut Vec<Player>, game: &Game) {
+    for server_player in players {
+        if let Some(engine_player) = game.players.iter().find(|p| p.name == server_player.username) {
+            server_player.position = engine_player.position as u8;
+            server_player.in_jail = engine_player.in_jail;
+            server_player.money = engine_player.money;
+            server_player.properties = engine_player.passport.all_stamps().iter()
+                .map(|s| {
+                    let color = if let Some(id) = s.destination_id {
+                        match game.board.find_destination_by_id(id).map(|d| d.color) {
+                            Some(game_engine::board::Color::Brown) => "brown",
+                            Some(game_engine::board::Color::LightBlue) => "lightblue",
+                            Some(game_engine::board::Color::Pink) => "pink",
+                            Some(game_engine::board::Color::Orange) => "orange",
+                            Some(game_engine::board::Color::Red) => "red",
+                            Some(game_engine::board::Color::Yellow) => "yellow",
+                            Some(game_engine::board::Color::Green) => "green",
+                            Some(game_engine::board::Color::DarkBlue) => "darkblue",
+                            None => "gray",
+                        }.to_string()
+                    } else {
+                        "gray".to_string()
+                    };
+                    crate::model::PropertyInfo {
+                        name: s.name.clone(),
+                        color,
+                    }
+                })
+                .collect();
         }
     }
 }
@@ -110,6 +173,8 @@ impl MutationRoot {
                 position: 0,
                 in_jail: false,
                 consecutive_doubles: 0,
+                money: 1500,
+                properties: Vec::new(),
             }],
             host: username,
             state: "waiting".to_string(),
@@ -145,6 +210,8 @@ impl MutationRoot {
                  position: 0,
                  in_jail: false,
                  consecutive_doubles: 0,
+                 money: 1500,
+                 properties: Vec::new(),
              };
              lobby.players.push(new_player.clone());
              
@@ -262,15 +329,8 @@ impl MutationRoot {
             let result = game.roll_dice()
                 .map_err(|e| Error::new(e))?;
 
-            // Sync Engine State to Server Player Models (for frontend display consistency)
-            for server_player in &mut lobby.players {
-                if let Some(engine_player) = game.players.iter().find(|p| p.name == server_player.username) {
-                    server_player.position = engine_player.position as u8;
-                    server_player.in_jail = engine_player.in_jail;
-                    // server_player.consecutive_doubles = engine_player.consecutive_doubles; // Engine manages this internally now
-                    // We can still update it if we want, but engine is source of truth
-                }
-            }
+            // Sync State
+            sync_lobby_state(&mut lobby.players, game);
 
             // Save to DB
             db.lobbies().update_one(
@@ -319,12 +379,85 @@ impl MutationRoot {
                 .map_err(|e| Error::new(e))?;
 
             // Sync State
-             for server_player in &mut lobby.players {
-                if let Some(engine_player) = game.players.iter().find(|p| p.name == server_player.username) {
-                    server_player.position = engine_player.position as u8;
-                    server_player.in_jail = engine_player.in_jail;
-                }
+            sync_lobby_state(&mut lobby.players, game);
+
+            // Save
+            db.lobbies().update_one(
+                doc! { "_id": lobby.id },
+                doc! { 
+                    "$set": { 
+                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                    } 
+                },
+                None
+            ).await?;
+
+            Ok(lobby)
+        } else {
+            Err(Error::new("Lobby not found"))
+        }
+    }
+
+    /// Resolve property purchase decision
+    async fn resolve_purchase(&self, ctx: &Context<'_>, code: String, username: String, buy: bool) -> Result<Lobby> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+
+        if let Some(mut lobby) = lobby_opt {
+            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+
+            // Validate turn
+            let current_idx = game.current_player_idx;
+            if game.players[current_idx].name != username {
+                return Err(Error::new("Not your turn"));
             }
+
+            // Execute Action
+            game.resolve_purchase(buy)
+                .map_err(|e| Error::new(e))?;
+
+            // Sync State
+            sync_lobby_state(&mut lobby.players, game);
+
+            // Save
+            db.lobbies().update_one(
+                doc! { "_id": lobby.id },
+                doc! { 
+                    "$set": { 
+                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                    } 
+                },
+                None
+            ).await?;
+
+            Ok(lobby)
+        } else {
+            Err(Error::new("Lobby not found"))
+        }
+    }
+
+    /// Resolve First Class stamp purchase decision
+    async fn resolve_first_class(&self, ctx: &Context<'_>, code: String, username: String, buy: bool) -> Result<Lobby> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+
+        if let Some(mut lobby) = lobby_opt {
+            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+
+            // Validate turn
+            let current_idx = game.current_player_idx;
+            if game.players[current_idx].name != username {
+                return Err(Error::new("Not your turn"));
+            }
+
+            // Execute Action
+            game.resolve_first_class(buy)
+                .map_err(|e| Error::new(e))?;
+
+            // Sync State
+            sync_lobby_state(&mut lobby.players, game);
 
             // Save
             db.lobbies().update_one(

@@ -12,6 +12,12 @@ pub struct User {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]
+pub struct PropertyInfo {
+    pub name: String,
+    pub color: String, // "gray" for First Class, or hex/color name for destinations
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]
 pub struct Player {
     pub username: String,
     pub character: Option<String>,
@@ -22,6 +28,10 @@ pub struct Player {
     pub in_jail: bool,
     #[serde(default)]
     pub consecutive_doubles: u8,
+    #[serde(default)]
+    pub money: u32,
+    #[serde(default)]
+    pub properties: Vec<PropertyInfo>,
 }
 
 impl Default for Player {
@@ -32,6 +42,8 @@ impl Default for Player {
             position: 0,
             in_jail: false,
             consecutive_doubles: 0,
+            money: 1500,
+            properties: Vec::new(),
         }
     }
 }
