@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, watchEffect } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
-import { GET_LOBBY_QUERY, ROLL_DICE_MUTATION, RESOLVE_FORCED_DEAL_MUTATION, RESOLVE_PURCHASE_MUTATION, RESOLVE_FIRST_CLASS_MUTATION } from '../../graphql/operations'
+import { GET_LOBBY_QUERY, ROLL_DICE_MUTATION, RESOLVE_FORCED_DEAL_MUTATION, RESOLVE_PURCHASE_MUTATION, RESOLVE_FIRST_CLASS_MUTATION, RESOLVE_AIRPORT_DECISION_MUTATION, RESOLVE_AIRPORT_DESTINATION_MUTATION } from '../../graphql/operations'
 import Passport from './Passport.vue'
 import Stamp from './Stamp.vue'
 import GameDice from './GameDice.vue'
@@ -25,6 +25,8 @@ const { mutate: rollDiceMutation } = useMutation(ROLL_DICE_MUTATION);
 const { mutate: resolveForcedDealMutation } = useMutation(RESOLVE_FORCED_DEAL_MUTATION);
 const { mutate: resolvePurchaseMutation } = useMutation(RESOLVE_PURCHASE_MUTATION);
 const { mutate: resolveFirstClassMutation } = useMutation(RESOLVE_FIRST_CLASS_MUTATION);
+const { mutate: resolveAirportDecisionMutation } = useMutation(RESOLVE_AIRPORT_DECISION_MUTATION);
+const { mutate: resolveAirportDestinationMutation } = useMutation(RESOLVE_AIRPORT_DESTINATION_MUTATION);
 
 // Game simulation state (local representation of server state)
 const gameState = reactive({
@@ -52,6 +54,8 @@ const gameState = reactive({
   awaitingAction: false,
   pendingPurchase: null as { destId: number; destName: string; price: number } | null,
   pendingFirstClass: false,
+  pendingAirportDecision: false,
+  pendingAirportDestination: false,
   isGameOver: false,
   winnerName: null as string | null,
   moneyNotifications: [] as Array<{ id: number; amount: string; type: 'plus' | 'minus'; x: number; y: number; playerName: string }>,
@@ -76,9 +80,11 @@ watchEffect(() => {
         if (lobby.gameState.lastDie1) gameState.diceValue1 = lobby.gameState.lastDie1
         if (lobby.gameState.lastDie2) gameState.diceValue2 = lobby.gameState.lastDie2
         gameState.awaitingAction = lobby.gameState.awaitingAction
-        gameState.forcedDealActive = lobby.gameState.awaitingAction
+        gameState.forcedDealActive = lobby.gameState.isForcedDeal
         gameState.pendingPurchase = lobby.gameState.pendingPurchase || null
         gameState.pendingFirstClass = lobby.gameState.pendingFirstClass || false
+        gameState.pendingAirportDecision = lobby.gameState.pendingAirportDecision || false
+        gameState.pendingAirportDestination = lobby.gameState.pendingAirportDestination || false
       }
     }
 
@@ -429,6 +435,42 @@ const handleFirstClassDecision = async (buy: boolean) => {
   }
 }
 
+// Handle Airport Flight Decision
+const handleAirportDecision = async (buy: boolean) => {
+  try {
+    await resolveAirportDecisionMutation({
+      code: props.code,
+      username: username,
+      buyFlight: buy
+    })
+    gameState.pendingAirportDecision = false
+  } catch (e) {
+    console.error("Airport decision failed:", e)
+  }
+}
+
+// Handle Airport Destination Selection
+const handleSelectDestination = async (position: number) => {
+  if (!gameState.pendingAirportDestination || !isMyTurn.value) return
+  
+  try {
+    await resolveAirportDestinationMutation({
+      code: props.code,
+      username: username,
+      targetPosition: position
+    })
+    gameState.pendingAirportDestination = false
+    
+    // Optimistic local move
+    const player = gameState.players[gameState.currentTurnIndex]
+    if (player) {
+      player.position = position
+    }
+  } catch (e) {
+    console.error("Airport destination failed:", e)
+  }
+}
+
 // Get current player
 const currentPlayer = computed(() => gameState.players[gameState.currentTurnIndex])
 
@@ -473,6 +515,32 @@ const getCharacterEmoji = (char?: string) => {
   }
 }
 
+// Logic for space selection (Airport flight)
+const getSpacePosition = (type: 'bottom' | 'left' | 'top' | 'right' | 'corner', index: number) => {
+  if (type === 'corner') return index; // 0, 10, 20, 30
+  if (type === 'bottom') return 9 - index; // bottomRow is reverse() of 1-9, so index 0 is pos 9
+  if (type === 'left') return 11 + index;
+  if (type === 'top') return 21 + index;
+  if (type === 'right') return 31 + index;
+  return 0;
+}
+
+const handleSpaceClick = (type: 'bottom' | 'left' | 'top' | 'right' | 'corner', index: number) => {
+  const pos = getSpacePosition(type, index);
+  const space = boardSpaces[pos];
+  
+  if (space && gameState.pendingAirportDestination && isMyTurn.value) {
+    if (space.type === 'destination' || space.type === 'first_class') {
+      handleSelectDestination(pos);
+    }
+  }
+}
+
+const isSpaceSelectable = (space: Space | undefined) => {
+  if (!space) return false;
+  return gameState.pendingAirportDestination && isMyTurn.value && (space.type === 'destination' || space.type === 'first_class');
+}
+
 // Zone mapping: 
 // zone-bottom-right -> player index 0
 // zone-bottom-left  -> player index 1
@@ -496,7 +564,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
       <!-- Top row -->
       <div class="board-row top-row">
         <!-- FREE PARKING corner -->
-        <div class="corner-space">
+        <div class="corner-space" :class="{ 'selectable-destination': isSpaceSelectable(boardSpaces[20]) }" @click="handleSpaceClick('corner', 20)">
           <div class="corner-content free-parking">
             <div class="corner-icon">🅿️</div>
             <span class="corner-label">FREE<br>PARKING</span>
@@ -508,7 +576,8 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
             v-for="(space, index) in topRow" 
             :key="'top-' + index"
             class="space"
-            :class="space.type"
+            :class="[space.type, { 'selectable-destination': isSpaceSelectable(space) }]"
+            @click="handleSpaceClick('top', index)"
           >
             <div 
               v-if="space.color" 
@@ -578,7 +647,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
         </div>
         
         <!-- GO TO JAIL corner -->
-        <div class="corner-space">
+        <div class="corner-space" :class="{ 'selectable-destination': isSpaceSelectable(boardSpaces[30]) }" @click="handleSpaceClick('corner', 30)">
           <div class="corner-content go-to-jail">
             <div class="corner-icon">🚔</div>
             <span class="corner-label">GO TO<br>JAIL</span>
@@ -594,7 +663,8 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
             v-for="(space, index) in leftColumn" 
             :key="'left-' + index"
             class="space horizontal-space left-side"
-            :class="space.type"
+            :class="[space.type, { 'selectable-destination': isSpaceSelectable(space) }]"
+            @click="handleSpaceClick('left', index)"
           >
             <div 
               v-if="space.color" 
@@ -791,6 +861,25 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
             </div>
           </div>
 
+          <!-- Airport Decision Modal -->
+          <div v-if="gameState.pendingAirportDecision && isMyTurn" class="modal-overlay">
+            <div class="airport-modal">
+              <div class="modal-content airport">
+                <div class="modal-icon mini">✈️</div>
+                <h3>Take a Flight?</h3>
+                <p>Pay M100 to fly to any destination or First Class space!</p>
+                <div class="modal-buttons">
+                  <button class="modal-btn buy" @click="handleAirportDecision(true)">
+                    ✅ Fly
+                  </button>
+                  <button class="modal-btn skip" @click="handleAirportDecision(false)">
+                    ❌ Stay
+                  </button>
+                </div>
+              </div>
+            </div>
+          </div>
+
           <!-- Victory Modal -->
           <div v-if="gameState.isGameOver" class="victory-modal">
             <div class="modal-content victory">
@@ -843,7 +932,8 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
             v-for="(space, index) in rightColumn" 
             :key="'right-' + index"
             class="space horizontal-space right-side"
-            :class="space.type"
+            :class="[space.type, { 'selectable-destination': isSpaceSelectable(space) }]"
+            @click="handleSpaceClick('right', index)"
           >
             <div 
               v-if="space.color" 
@@ -915,7 +1005,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
       <!-- Bottom row -->
       <div class="board-row bottom-row">
         <!-- JUST VISITING corner -->
-        <div class="corner-space">
+        <div class="corner-space" :class="{ 'selectable-destination': isSpaceSelectable(boardSpaces[10]) }" @click="handleSpaceClick('corner', 10)">
           <div class="corner-content just-visiting">
             <div class="jail-box">
               <span>JAIL</span>
@@ -929,7 +1019,8 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
             v-for="(space, index) in bottomRow" 
             :key="'bottom-' + index"
             class="space bottom-space"
-            :class="space.type"
+            :class="[space.type, { 'selectable-destination': isSpaceSelectable(space) }]"
+            @click="handleSpaceClick('bottom', index)"
           >
             <div 
               v-if="space.color" 
@@ -998,7 +1089,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
         </div>
         
         <!-- START corner -->
-        <div class="corner-space">
+        <div class="corner-space" :class="{ 'selectable-destination': isSpaceSelectable(boardSpaces[0]) }" @click="handleSpaceClick('corner', 0)">
           <div class="corner-content start">
             <div class="start-diamond-final">
               <div class="start-arrow-final">➜</div>
@@ -2268,7 +2359,8 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 
 /* Purchase and First Class modals - reuse forced-deal-modal base */
 .purchase-modal,
-.first-class-modal {
+.first-class-modal,
+.airport-modal {
   position: absolute;
   top: 50%;
   left: 50%;
@@ -2277,14 +2369,43 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
   animation: fadeIn 0.3s ease-out;
 }
 
+.modal-overlay {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background: rgba(0, 0, 0, 0.4);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+}
+
 .purchase-modal .modal-content,
-.first-class-modal .modal-content {
+.first-class-modal .modal-content,
+.airport-modal .modal-content {
   background: linear-gradient(145deg, #ffffff 0%, #f0f0f0 100%);
   border-radius: 20px;
   padding: 24px 32px;
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
   border: 3px solid #ffd700;
   text-align: center;
+}
+
+.modal-content.airport {
+  padding: 16px 24px;
+  min-width: 200px;
+}
+
+.modal-content.airport h3 {
+  font-size: 20px;
+  margin-bottom: 8px;
+}
+
+.modal-content.airport p {
+  font-size: 14px;
+  margin-bottom: 16px;
 }
 
 .purchase-modal h3,
@@ -2358,5 +2479,49 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
   .passport-area {
     transform: scale(0.25);
   }
+}
+
+/* Airport Selection */
+.space.selectable-destination {
+  cursor: pointer;
+  position: relative;
+  overflow: visible !important;
+}
+
+.space.selectable-destination::after {
+  content: '';
+  position: absolute;
+  top: -4px;
+  left: -4px;
+  right: -4px;
+  bottom: -4px;
+  border: 4px solid #fff;
+  border-radius: 8px;
+  box-shadow: 0 0 15px rgba(255, 255, 255, 0.8);
+  animation: pulse-border 1.5s infinite;
+  pointer-events: none;
+  z-index: 100;
+}
+
+@keyframes pulse-border {
+  0% { transform: scale(1); opacity: 0.6; }
+  50% { transform: scale(1.05); opacity: 1; }
+  100% { transform: scale(1); opacity: 0.6; }
+}
+
+.airport-modal .modal-icon {
+  font-size: 3rem;
+  margin-bottom: 0.5rem;
+  animation: float 3s ease-in-out infinite;
+}
+
+.airport-modal .modal-icon.mini {
+  font-size: 2rem;
+  margin-bottom: 0.2rem;
+}
+
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-10px); }
 }
 </style>

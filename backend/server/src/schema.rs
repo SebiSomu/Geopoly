@@ -23,6 +23,9 @@ pub struct GameStateDisplay {
     pub awaiting_action: bool,
     pub pending_purchase: Option<PendingPurchase>,
     pub pending_first_class: bool,
+    pub pending_airport_decision: bool,
+    pub pending_airport_destination: bool,
+    pub is_forced_deal: bool,
     pub is_game_over: bool,
     pub winner_name: Option<String>,
 }
@@ -50,6 +53,8 @@ impl Lobby {
             };
             
             let pending_first_class = game.step == GameStep::WaitingForFirstClassDecision;
+            let pending_airport_decision = game.step == GameStep::WaitingForAirportDecision;
+            let pending_airport_destination = game.step == GameStep::WaitingForAirportDestination;
             
             let mut winner_name = None;
             if game.game_over {
@@ -63,9 +68,15 @@ impl Lobby {
                 current_turn_index: game.current_player_idx as u8,
                 last_die1: d1,
                 last_die2: d2,
-                awaiting_action: game.step == GameStep::WaitingForForcedDeal,
+                awaiting_action: match &game.step {
+                    GameStep::WaitingForRoll => false,
+                    _ => true,
+                },
                 pending_purchase,
                 pending_first_class,
+                pending_airport_decision,
+                pending_airport_destination,
+                is_forced_deal: game.step == GameStep::WaitingForForcedDeal,
                 is_game_over: game.game_over,
                 winner_name,
             })
@@ -482,6 +493,84 @@ impl MutationRoot {
 
             // Execute Action
             game.resolve_first_class(buy)
+                .map_err(|e| Error::new(e))?;
+
+            // Sync State
+            sync_lobby_state(&mut lobby.players, game);
+
+            // Save
+            db.lobbies().update_one(
+                doc! { "_id": lobby.id },
+                doc! { 
+                    "$set": { 
+                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                    } 
+                },
+                None
+            ).await?;
+
+            Ok(lobby)
+        } else {
+            Err(Error::new("Lobby not found"))
+        }
+    }
+
+    /// Resolve Airport flight decision
+    async fn resolve_airport_decision(&self, ctx: &Context<'_>, code: String, username: String, buy_flight: bool) -> Result<Lobby> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+
+        if let Some(mut lobby) = lobby_opt {
+            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+
+            // Validate turn
+            let current_idx = game.current_player_idx;
+            if game.players[current_idx].name != username {
+                return Err(Error::new("Not your turn"));
+            }
+
+            // Execute Action
+            game.resolve_airport_decision(buy_flight)
+                .map_err(|e| Error::new(e))?;
+
+            // Sync State
+            sync_lobby_state(&mut lobby.players, game);
+
+            // Save
+            db.lobbies().update_one(
+                doc! { "_id": lobby.id },
+                doc! { 
+                    "$set": { 
+                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                    } 
+                },
+                None
+            ).await?;
+
+            Ok(lobby)
+        } else {
+            Err(Error::new("Lobby not found"))
+        }
+    }
+
+    /// Resolve Airport destination selection
+    async fn resolve_airport_destination(&self, ctx: &Context<'_>, code: String, username: String, target_position: u8) -> Result<Lobby> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+
+        if let Some(mut lobby) = lobby_opt {
+            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+
+            // Validate turn
+            let current_idx = game.current_player_idx;
+            if game.players[current_idx].name != username {
+                return Err(Error::new("Not your turn"));
+            }
+
+            // Execute Action
+            game.resolve_airport_destination(target_position)
                 .map_err(|e| Error::new(e))?;
 
             // Sync State

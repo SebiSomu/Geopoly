@@ -86,6 +86,9 @@ export const GET_LOBBY_QUERY = gql`
           price
         }
         pendingFirstClass
+        pendingAirportDecision
+        pendingAirportDestination
+        isForcedDeal
         isGameOver
         winnerName
       }
@@ -142,6 +145,22 @@ export const RESOLVE_PURCHASE_MUTATION = gql`
 export const RESOLVE_FIRST_CLASS_MUTATION = gql`
   mutation ResolveFirstClass($code: String!, $username: String!, $buy: Boolean!) {
     resolveFirstClass(code: $code, username: $username, buy: $buy) {
+      code
+    }
+  }
+`
+
+export const RESOLVE_AIRPORT_DECISION_MUTATION = gql`
+  mutation ResolveAirportDecision($code: String!, $username: String!, $buyFlight: Boolean!) {
+    resolveAirportDecision(code: $code, username: $username, buyFlight: $buyFlight) {
+      code
+    }
+  }
+`
+
+export const RESOLVE_AIRPORT_DESTINATION_MUTATION = gql`
+  mutation ResolveAirportDestination($code: String!, $username: String!, $targetPosition: Int!) {
+    resolveAirportDestination(code: $code, username: $username, targetPosition: $targetPosition) {
       code
     }
   }

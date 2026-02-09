@@ -20,6 +20,8 @@ pub enum GameStep {
     WaitingForForcedDeal,
     WaitingForPurchaseDecision { dest_id: u8, price: u32 },
     WaitingForFirstClassDecision,
+    WaitingForAirportDecision,
+    WaitingForAirportDestination,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -112,7 +114,10 @@ impl Game {
                     self.handle_landing();
                     
                     let turn_ends = match self.step {
-                        GameStep::WaitingForPurchaseDecision { .. } | GameStep::WaitingForFirstClassDecision => false,
+                        GameStep::WaitingForPurchaseDecision { .. } | 
+                        GameStep::WaitingForFirstClassDecision |
+                        GameStep::WaitingForAirportDecision |
+                        GameStep::WaitingForAirportDestination => false,
                         _ => true,
                     };
 
@@ -155,7 +160,10 @@ impl Game {
 
                 // Only end turn if no decisions are pending
                 let turn_ends = match self.step {
-                    GameStep::WaitingForPurchaseDecision { .. } | GameStep::WaitingForFirstClassDecision => false,
+                    GameStep::WaitingForPurchaseDecision { .. } | 
+                    GameStep::WaitingForFirstClassDecision |
+                    GameStep::WaitingForAirportDecision |
+                    GameStep::WaitingForAirportDestination => false,
                     _ => true,
                 };
 
@@ -220,7 +228,12 @@ impl Game {
                 }
 
                 // If a decision is pending, turn stops for input but doesn't technically end (still same player's turn context)
-                let pending_decision = matches!(self.step, GameStep::WaitingForPurchaseDecision { .. } | GameStep::WaitingForFirstClassDecision);
+                let pending_decision = matches!(self.step, 
+                    GameStep::WaitingForPurchaseDecision { .. } | 
+                    GameStep::WaitingForFirstClassDecision |
+                    GameStep::WaitingForAirportDecision |
+                    GameStep::WaitingForAirportDestination
+                );
                 
                 Ok(TurnResult {
                     die1: d1,
@@ -265,7 +278,10 @@ impl Game {
             
             // Verificăm dacă tura se încheie (poate a aterizat pe o proprietate)
             let turn_ends = match self.step {
-                GameStep::WaitingForPurchaseDecision { .. } | GameStep::WaitingForFirstClassDecision => false,
+                GameStep::WaitingForPurchaseDecision { .. } | 
+                GameStep::WaitingForFirstClassDecision |
+                GameStep::WaitingForAirportDecision |
+                GameStep::WaitingForAirportDestination => false,
                 _ => true,
             };
 
@@ -501,6 +517,85 @@ impl Game {
             new_position: self.players[player_idx].position as u8,
             went_to_jail: false,
             turn_ends: true,
+            current_player_index: self.current_player_idx as u8,
+        })
+    }
+
+    /// Rezolvă decizia de zbor de la Aeroport
+    pub fn resolve_airport_decision(&mut self, buy_flight: bool) -> Result<TurnResult, String> {
+        if self.step != GameStep::WaitingForAirportDecision {
+            return Err("Not waiting for airport decision".to_string());
+        }
+
+        let player_idx = self.current_player_idx;
+
+        if buy_flight {
+            if self.players[player_idx].pay_money(100) {
+                println!("✅ Ai plătit M100 pentru zbor! Alege destinația.");
+                self.step = GameStep::WaitingForAirportDestination;
+            } else {
+                println!("{}", "Nu ai suficienți bani!".red());
+                self.step = GameStep::WaitingForRoll;
+                self.end_turn();
+            }
+        } else {
+            println!("Jucătorul a refuzat zborul.");
+            self.step = GameStep::WaitingForRoll;
+            self.end_turn();
+        }
+
+        Ok(TurnResult {
+            die1: 0, die2: 0,
+            is_double: false,
+            is_forced_deal: false,
+            new_position: self.players[player_idx].position as u8,
+            went_to_jail: false,
+            turn_ends: self.step == GameStep::WaitingForRoll,
+            current_player_index: self.current_player_idx as u8,
+        })
+    }
+
+    /// Rezolvă alegerea destinației de zbor
+    pub fn resolve_airport_destination(&mut self, target_position: u8) -> Result<TurnResult, String> {
+        if self.step != GameStep::WaitingForAirportDestination {
+            return Err("Not waiting for airport destination".to_string());
+        }
+
+        let player_idx = self.current_player_idx;
+        let board_size = self.board.total_spaces();
+        
+        if target_position as usize >= board_size {
+            return Err("Invalid destination position".to_string());
+        }
+
+        // Teleportare (nu se colectează M200 la trecerea prin START conform regulii)
+        self.players[player_idx].move_to(target_position as usize);
+        println!("✈️ Jucătorul a zburat la poziția {}", target_position);
+
+        // Declanșăm logica de aterizare pe noul spațiu
+        self.handle_landing();
+
+        // Verificăm dacă am ajuns într-o stare de așteptare decizie
+        let turn_ends = match self.step {
+            GameStep::WaitingForPurchaseDecision { .. } | 
+            GameStep::WaitingForFirstClassDecision |
+            GameStep::WaitingForAirportDecision |
+            GameStep::WaitingForAirportDestination => false,
+            _ => true,
+        };
+
+        if turn_ends {
+            self.step = GameStep::WaitingForRoll;
+            self.end_turn();
+        }
+
+        Ok(TurnResult {
+            die1: 0, die2: 0,
+            is_double: false,
+            is_forced_deal: false,
+            new_position: self.players[player_idx].position as u8,
+            went_to_jail: false,
+            turn_ends,
             current_player_index: self.current_player_idx as u8,
         })
     }
@@ -767,9 +862,13 @@ impl Game {
 
     fn handle_airport(&mut self) {
         println!("✈️ AEROPORT - Poți zbura oriunde pentru M100");
-
-        // Simplificat: nu zburăm automat
-        println!("Auto: Rămân aici.");
+        let idx = self.current_player_idx;
+        if self.players[idx].money >= 100 {
+            self.step = GameStep::WaitingForAirportDecision;
+            println!("Așteptăm decizia jucătorului pentru aeroport...");
+        } else {
+            println!("Nu ai destui bani pentru zbor.");
+        }
     }
 
     fn handle_here_and_now(&mut self) {
