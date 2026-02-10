@@ -88,6 +88,12 @@ export const GET_LOBBY_QUERY = gql`
         pendingFirstClass
         pendingAirportDecision
         pendingAirportDestination
+        pendingTargetSelection
+        pendingDiceDuel
+        diceDuelSource
+        diceDuelTarget
+        sourceRoll
+        targetRoll
         isForcedDeal
         isGameOver
         winnerName
@@ -179,5 +185,18 @@ export const USE_CARD_MUTATION = gql`
     useCard(code: $code, username: $username, cardId: $cardId) {
       code
     }
+  }
+`
+
+
+export const RESOLVE_TARGET_SELECTION_MUTATION = gql`
+  mutation ResolveTargetSelection($code: String!, $username: String!, $target: String!) {
+    resolveTargetSelection(code: $code, username: $username, target: $target) { code }
+  }
+`
+
+export const ROLL_DUEL_DICE_MUTATION = gql`
+  mutation RollDuelDice($code: String!, $username: String!) {
+    rollDuelDice(code: $code, username: $username) { code }
   }
 `

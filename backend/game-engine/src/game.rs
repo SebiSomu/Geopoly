@@ -1,27 +1,69 @@
-use crate::board::{Board, Space, Destination};
-use crate::player::Player;
-use crate::cards::{ChanceDeck, HereAndNowDeck, ChanceCardAction, HereAndNowCardAction};
+use crate::board::{Board, Destination, Space};
+use crate::cards::{ChanceCardAction, ChanceDeck, HereAndNowCardAction, HereAndNowDeck};
 use crate::passport::Stamp;
+use crate::player::Player;
 use colored::*;
 use rand::Rng;
+use serde::{Deserialize, Serialize};
 use std::io::{self, Write};
-use serde::{Serialize, Deserialize};
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GameAction {
+    MoneyTransfer {
+        from_idx: usize,
+        to_idx: usize,
+        amount: u32,
+        reason: String,
+    },
+    StampTransfer {
+        from_idx: usize,
+        to_idx: usize,
+        stamp: Stamp,
+        reason: String,
+    },
+    SentToJail {
+        player_idx: usize,
+        reason: String,
+    },
+    PropertyPurchase {
+        buyer_idx: usize,
+        dest_id: u8,
+        price: u32,
+    },
+    FirstClassReceived {
+        receiver_idx: usize,
+    },
+}
 
 #[derive(Debug, Clone, Copy, PartialEq, Serialize, Deserialize)]
 pub enum DiceResult {
     Normal(u8, u8),
     Double(u8),
-    BusinessDeal(u8)
+    BusinessDeal(u8),
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum GameStep {
     WaitingForRoll,
     WaitingForForcedDeal,
-    WaitingForPurchaseDecision { dest_id: u8, price: u32 },
+    WaitingForPurchaseDecision {
+        dest_id: u8,
+        price: u32,
+        buyer_idx: usize,
+    },
     WaitingForFirstClassDecision,
     WaitingForAirportDecision,
     WaitingForAirportDestination,
+    WaitingForTargetSelection {
+        source_idx: usize,
+        purpose: String,
+    },
+    WaitingForDiceDuel {
+        source_idx: usize,
+        target_idx: usize,
+        source_roll: Option<u8>,
+        target_roll: Option<u8>,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -48,6 +90,7 @@ pub struct Game {
     pub game_over: bool,
     pub step: GameStep,
     pub last_dice: Option<(u8, u8)>,
+    pub action_history: Vec<GameAction>,
 }
 
 impl Game {
@@ -78,6 +121,52 @@ impl Game {
             game_over: false,
             step: GameStep::WaitingForRoll,
             last_dice: None,
+            action_history: Vec::new(),
+        }
+    }
+
+    fn record_action(&mut self, action: GameAction) {
+        self.action_history.push(action);
+        if self.action_history.len() > 100 {
+            let drain = self.action_history.len() - 100;
+            self.action_history.drain(0..drain);
+        }
+    }
+
+    fn perform_money_transfer(
+        &mut self,
+        from_idx: usize,
+        to_idx: usize,
+        amount: u32,
+        reason: &str,
+    ) -> bool {
+        if self.players[from_idx].pay_money(amount) {
+            self.players[to_idx].add_money(amount);
+            self.record_action(GameAction::MoneyTransfer {
+                from_idx,
+                to_idx,
+                amount,
+                reason: reason.to_string(),
+            });
+            true
+        } else {
+            false
+        }
+    }
+
+    fn perform_stamp_transfer(&mut self, from_idx: usize, to_idx: usize, reason: &str) -> bool {
+        if let Some(stamp) = self.players[from_idx].passport.remove_last_stamp() {
+            let moved = stamp.clone();
+            self.add_stamp_with_checks(to_idx, stamp);
+            self.record_action(GameAction::StampTransfer {
+                from_idx,
+                to_idx,
+                stamp: moved,
+                reason: reason.to_string(),
+            });
+            true
+        } else {
+            false
         }
     }
 
@@ -109,15 +198,18 @@ impl Game {
                 self.players[player_idx].consecutive_doubles = 0;
 
                 if self.players[player_idx].passport.stamp_count() == 0 {
-                    println!("\n{}", "💼 AFACERE FORȚATĂ! (N-ai ștampile => mutare automată)".bright_magenta());
+                    println!(
+                        "\n{}",
+                        "💼 AFACERE FORȚATĂ! (N-ai ștampile => mutare automată)".bright_magenta()
+                    );
                     self.move_player(d2 as i32);
                     self.handle_landing();
-                    
+
                     let turn_ends = match self.step {
-                        GameStep::WaitingForPurchaseDecision { .. } | 
-                        GameStep::WaitingForFirstClassDecision |
-                        GameStep::WaitingForAirportDecision |
-                        GameStep::WaitingForAirportDestination => false,
+                        GameStep::WaitingForPurchaseDecision { .. }
+                        | GameStep::WaitingForFirstClassDecision
+                        | GameStep::WaitingForAirportDecision
+                        | GameStep::WaitingForAirportDestination => false,
                         _ => true,
                     };
 
@@ -126,8 +218,8 @@ impl Game {
                     }
 
                     Ok(TurnResult {
-                        die1: 1, 
-                        die2: d2, 
+                        die1: 1,
+                        die2: d2,
                         is_double: false,
                         is_forced_deal: false,
                         new_position: self.players[player_idx].position as u8,
@@ -138,10 +230,10 @@ impl Game {
                 } else {
                     println!("\n{}", "💼 AFACERE FORȚATĂ!".bright_magenta());
                     self.step = GameStep::WaitingForForcedDeal;
-                    
+
                     Ok(TurnResult {
-                        die1: 1, 
-                        die2: d2, 
+                        die1: 1,
+                        die2: d2,
                         is_double: false,
                         is_forced_deal: true,
                         new_position: self.players[player_idx].position as u8,
@@ -160,10 +252,10 @@ impl Game {
 
                 // Only end turn if no decisions are pending
                 let turn_ends = match self.step {
-                    GameStep::WaitingForPurchaseDecision { .. } | 
-                    GameStep::WaitingForFirstClassDecision |
-                    GameStep::WaitingForAirportDecision |
-                    GameStep::WaitingForAirportDestination => false,
+                    GameStep::WaitingForPurchaseDecision { .. }
+                    | GameStep::WaitingForFirstClassDecision
+                    | GameStep::WaitingForAirportDecision
+                    | GameStep::WaitingForAirportDestination => false,
                     _ => true,
                 };
 
@@ -187,12 +279,19 @@ impl Game {
                 let d2 = val;
                 let total = d1 + d2;
                 self.last_dice = Some((d1, d2));
-                
+
                 self.players[player_idx].consecutive_doubles += 1;
 
                 if self.players[player_idx].consecutive_doubles >= 3 {
-                    println!("\n{}", "🚫 A TREIA DUBLĂ! Mergi direct la ÎNCHISOARE!".red());
+                    println!(
+                        "\n{}",
+                        "🚫 A TREIA DUBLĂ! Mergi direct la ÎNCHISOARE!".red()
+                    );
                     self.players[player_idx].send_to_jail();
+                    self.record_action(GameAction::SentToJail {
+                        player_idx,
+                        reason: "three_doubles".to_string(),
+                    });
                     self.players[player_idx].consecutive_doubles = 0;
                     self.end_turn();
 
@@ -208,14 +307,21 @@ impl Game {
                     });
                 }
 
-                println!("\n{}", format!("Dublă #{}! Mută {} spații și mai arunci o dată!", self.players[player_idx].consecutive_doubles, total).bright_green());
+                println!(
+                    "\n{}",
+                    format!(
+                        "Dublă #{}! Mută {} spații și mai arunci o dată!",
+                        self.players[player_idx].consecutive_doubles, total
+                    )
+                    .bright_green()
+                );
                 self.move_player(total as i32);
                 self.handle_landing();
 
                 let moved_to_jail = self.players[player_idx].in_jail;
                 if moved_to_jail || self.game_over {
                     self.end_turn();
-                     return Ok(TurnResult {
+                    return Ok(TurnResult {
                         die1: d1,
                         die2: d2,
                         is_double: true,
@@ -228,13 +334,14 @@ impl Game {
                 }
 
                 // If a decision is pending, turn stops for input but doesn't technically end (still same player's turn context)
-                let pending_decision = matches!(self.step, 
-                    GameStep::WaitingForPurchaseDecision { .. } | 
-                    GameStep::WaitingForFirstClassDecision |
-                    GameStep::WaitingForAirportDecision |
-                    GameStep::WaitingForAirportDestination
+                let pending_decision = matches!(
+                    self.step,
+                    GameStep::WaitingForPurchaseDecision { .. }
+                        | GameStep::WaitingForFirstClassDecision
+                        | GameStep::WaitingForAirportDecision
+                        | GameStep::WaitingForAirportDestination
                 );
-                
+
                 Ok(TurnResult {
                     die1: d1,
                     die2: d2,
@@ -254,10 +361,10 @@ impl Game {
         self.players[player_idx].jail_turns += 1;
 
         println!("\n{}", "🔒 Încercare evadare din închisoare...".cyan());
-        
+
         // Simplificare: DOAR aruncăm zarurile (fără opțiune de a plăti momentan în API roll)
         // În viitor am putea adăuga o metodă `pay_jail_fine`
-        
+
         let dice_result = Self::roll_dice_internal();
         self.display_dice_result(&dice_result);
 
@@ -266,7 +373,7 @@ impl Game {
             DiceResult::Double(a) => (a, a, false),
             DiceResult::BusinessDeal(b) => (1, b, true),
         };
-        
+
         // Asigurăm că salvăm ultimele zaruri pentru sincronizarea cu UI-ul
         self.last_dice = Some((d1, d2));
 
@@ -275,22 +382,23 @@ impl Game {
             self.players[player_idx].release_from_jail();
             self.move_player((val * 2) as i32);
             self.handle_landing();
-            
+
             // Verificăm dacă tura se încheie (poate a aterizat pe o proprietate)
             let turn_ends = match self.step {
-                GameStep::WaitingForPurchaseDecision { .. } | 
-                GameStep::WaitingForFirstClassDecision |
-                GameStep::WaitingForAirportDecision |
-                GameStep::WaitingForAirportDestination => false,
+                GameStep::WaitingForPurchaseDecision { .. }
+                | GameStep::WaitingForFirstClassDecision
+                | GameStep::WaitingForAirportDecision
+                | GameStep::WaitingForAirportDestination => false,
                 _ => true,
             };
 
             if turn_ends {
                 self.end_turn();
             }
-            
+
             Ok(TurnResult {
-                die1: val, die2: val,
+                die1: val,
+                die2: val,
                 is_double: true,
                 is_forced_deal: false,
                 new_position: self.players[player_idx].position as u8,
@@ -301,19 +409,29 @@ impl Game {
         } else {
             println!("\n{}", "Nu ai dat dublă.".yellow());
             let mut released = false;
-            
+
             if self.players[player_idx].jail_turns >= 3 {
-                 println!("{}", "Ai stat 3 ture! Plătești M100 și ieși automat (sau faliment).".yellow());
-                 if self.players[player_idx].pay_money(100) {
-                     self.players[player_idx].release_from_jail();
-                     released = true;
-                     let move_amount = d1 + d2;
-                     self.move_player(move_amount as i32);
-                     self.handle_landing();
-                 } else {
-                     self.handle_bankruptcy(player_idx, None);
-                     return Ok(TurnResult {
-                        die1: d1, die2: d2,
+                println!(
+                    "{}",
+                    "Ai stat 3 ture! Plătești M100 și ieși automat (sau faliment).".yellow()
+                );
+                if self.players[player_idx].pay_money(100) {
+                    self.record_action(GameAction::MoneyTransfer {
+                        from_idx: player_idx,
+                        to_idx: player_idx,
+                        amount: 100,
+                        reason: "first_class_purchase".to_string(),
+                    });
+                    self.players[player_idx].release_from_jail();
+                    released = true;
+                    let move_amount = d1 + d2;
+                    self.move_player(move_amount as i32);
+                    self.handle_landing();
+                } else {
+                    self.handle_bankruptcy(player_idx, None);
+                    return Ok(TurnResult {
+                        die1: d1,
+                        die2: d2,
                         is_double: false,
                         is_forced_deal: false,
                         new_position: self.players[player_idx].position as u8,
@@ -321,33 +439,36 @@ impl Game {
                         turn_ends: true,
                         current_player_index: self.current_player_idx as u8,
                     });
-                 }
+                }
             }
-            
+
             // Dacă a ieșit forțat, verificăm dacă e Afacere Forțată sau dacă trebuie să aleagă ceva
             if released && is_forced_deal && self.players[player_idx].passport.stamp_count() > 0 {
-                 println!("\n{}", "💼 AFACERE FORȚATĂ!".bright_magenta());
-                 self.step = GameStep::WaitingForForcedDeal;
-                 // Nu mai e nevoie să setăm last_dice aici, e setat deja sus
+                println!("\n{}", "💼 AFACERE FORȚATĂ!".bright_magenta());
+                self.step = GameStep::WaitingForForcedDeal;
+                // Nu mai e nevoie să setăm last_dice aici, e setat deja sus
             }
 
             let turn_ends = match self.step {
-                GameStep::WaitingForPurchaseDecision { .. } |
-                GameStep::WaitingForFirstClassDecision |
-                GameStep::WaitingForAirportDecision |
-                GameStep::WaitingForAirportDestination |
-                GameStep::WaitingForForcedDeal => false,
+                GameStep::WaitingForPurchaseDecision { .. }
+                | GameStep::WaitingForFirstClassDecision
+                | GameStep::WaitingForAirportDecision
+                | GameStep::WaitingForAirportDestination
+                | GameStep::WaitingForForcedDeal => false,
                 _ => true,
             };
 
             if turn_ends {
                 self.end_turn();
             }
-            
+
             Ok(TurnResult {
-                die1: d1, die2: d2,
+                die1: d1,
+                die2: d2,
                 is_double: false,
-                is_forced_deal: released && is_forced_deal && self.players[player_idx].passport.stamp_count() > 0,
+                is_forced_deal: released
+                    && is_forced_deal
+                    && self.players[player_idx].passport.stamp_count() > 0,
                 new_position: self.players[player_idx].position as u8,
                 went_to_jail: !released,
                 turn_ends,
@@ -356,13 +477,17 @@ impl Game {
         }
     }
 
-    pub fn resolve_forced_deal(&mut self, action: &str, target_name: Option<String>) -> Result<TurnResult, String> {
+    pub fn resolve_forced_deal(
+        &mut self,
+        action: &str,
+        target_name: Option<String>,
+    ) -> Result<TurnResult, String> {
         if self.step != GameStep::WaitingForForcedDeal {
             return Err("Not waiting for forced deal".to_string());
         }
 
         let player_idx = self.current_player_idx;
-        
+
         match action {
             "sneaky_swap" => {
                 let target_idx = if let Some(name) = target_name {
@@ -371,23 +496,27 @@ impl Game {
                     None
                 };
                 self.handle_business_deal(target_idx);
-            },
+            }
             "move" => {
                 // Mută cu valoarea de pe die2 (salvată în last_dice)
-                let steps = if let Some((_, d2)) = self.last_dice { d2 as i32 } else { 1 };
+                let steps = if let Some((_, d2)) = self.last_dice {
+                    d2 as i32
+                } else {
+                    1
+                };
                 println!("Ales 'Move': Mută {} spații", steps);
                 self.move_player(steps);
                 self.handle_landing();
             }
-            _ => return Err("Invalid action".to_string())
+            _ => return Err("Invalid action".to_string()),
         }
 
         // Verificăm dacă am ajuns într-o stare de așteptare decizie
         let turn_ends = match self.step {
-            GameStep::WaitingForPurchaseDecision { .. } | 
-            GameStep::WaitingForFirstClassDecision |
-            GameStep::WaitingForAirportDecision |
-            GameStep::WaitingForAirportDestination => false,
+            GameStep::WaitingForPurchaseDecision { .. }
+            | GameStep::WaitingForFirstClassDecision
+            | GameStep::WaitingForAirportDecision
+            | GameStep::WaitingForAirportDestination => false,
             _ => true,
         };
 
@@ -397,7 +526,8 @@ impl Game {
         }
 
         Ok(TurnResult {
-            die1: 0, die2: 0,
+            die1: 0,
+            die2: 0,
             is_double: false,
             is_forced_deal: false,
             new_position: self.players[player_idx].position as u8,
@@ -409,8 +539,12 @@ impl Game {
 
     /// Rezolvă decizia de cumpărare a unei proprietăți
     pub fn resolve_purchase(&mut self, buy: bool) -> Result<TurnResult, String> {
-        let (dest_id, price) = match &self.step {
-            GameStep::WaitingForPurchaseDecision { dest_id, price } => (*dest_id, *price),
+        let (dest_id, price, buyer_idx) = match &self.step {
+            GameStep::WaitingForPurchaseDecision {
+                dest_id,
+                price,
+                buyer_idx,
+            } => (*dest_id, *price, *buyer_idx),
             _ => return Err("Not waiting for purchase decision".to_string()),
         };
 
@@ -421,11 +555,17 @@ impl Game {
             if let Some(dest) = self.board.find_destination_by_id(dest_id) {
                 let dest = dest.clone();
                 if self.players[player_idx].pay_money(price) {
+                    self.record_action(GameAction::PropertyPurchase {
+                        buyer_idx,
+                        dest_id,
+                        price,
+                    });
                     // Cumpărarea proprietății (include verificare set și win)
-                    if self.acquire_property(player_idx, &dest) {
+                    if self.acquire_property(buyer_idx, &dest) {
                         self.step = GameStep::WaitingForRoll;
                         return Ok(TurnResult {
-                            die1: 0, die2: 0,
+                            die1: 0,
+                            die2: 0,
                             is_double: false,
                             is_forced_deal: false,
                             new_position: self.players[player_idx].position as u8,
@@ -446,7 +586,8 @@ impl Game {
         self.end_turn();
 
         Ok(TurnResult {
-            die1: 0, die2: 0,
+            die1: 0,
+            die2: 0,
             is_double: false,
             is_forced_deal: false,
             new_position: self.players[player_idx].position as u8,
@@ -472,11 +613,22 @@ impl Game {
                 let mut stealer_idx: Option<usize> = None;
                 for i in 0..self.players.len() {
                     if i != player_idx && self.players[i].steal_first_class_ready {
-                        println!("{}", format!("✈️ {} FURĂ ștampila First Class cu cardul Here&Now!", self.players[i].name).bright_magenta());
+                        println!(
+                            "{}",
+                            format!(
+                                "✈️ {} FURĂ ștampila First Class cu cardul Here&Now!",
+                                self.players[i].name
+                            )
+                            .bright_magenta()
+                        );
                         stealer_idx = Some(i);
 
                         self.players[i].steal_first_class_ready = false;
-                        if let Some(pos) = self.players[i].here_and_now_cards.iter().position(|c| matches!(c.action, HereAndNowCardAction::StealFirstClass)) {
+                        if let Some(pos) = self.players[i]
+                            .here_and_now_cards
+                            .iter()
+                            .position(|c| matches!(c.action, HereAndNowCardAction::StealFirstClass))
+                        {
                             let card = self.players[i].here_and_now_cards.remove(pos);
                             self.here_and_now_deck.discard(card);
                         }
@@ -486,10 +638,20 @@ impl Game {
 
                 let final_idx = stealer_idx.unwrap_or(player_idx);
                 self.players[final_idx].passport.add_stamp(stamp);
+                self.record_action(GameAction::FirstClassReceived {
+                    receiver_idx: final_idx,
+                });
                 self.first_class_stamps_available -= 1;
 
                 if stealer_idx.is_some() {
-                    println!("{}", format!("✅ {} a furat stampila Clasa Întâi!", self.players[final_idx].name).bright_green());
+                    println!(
+                        "{}",
+                        format!(
+                            "✅ {} a furat stampila Clasa Întâi!",
+                            self.players[final_idx].name
+                        )
+                        .bright_green()
+                    );
                 } else {
                     println!("{}", "✅ Ai cumpărat stampila Clasa Întâi!".green());
                 }
@@ -506,7 +668,8 @@ impl Game {
         self.end_turn();
 
         Ok(TurnResult {
-            die1: 0, die2: 0,
+            die1: 0,
+            die2: 0,
             is_double: false,
             is_forced_deal: false,
             new_position: self.players[player_idx].position as u8,
@@ -540,7 +703,8 @@ impl Game {
         }
 
         Ok(TurnResult {
-            die1: 0, die2: 0,
+            die1: 0,
+            die2: 0,
             is_double: false,
             is_forced_deal: false,
             new_position: self.players[player_idx].position as u8,
@@ -551,14 +715,20 @@ impl Game {
     }
 
     /// Rezolvă alegerea destinației de zbor
-    pub fn resolve_airport_destination(&mut self, target_position: u8) -> Result<TurnResult, String> {
+    pub fn resolve_airport_destination(
+        &mut self,
+        target_position: u8,
+    ) -> Result<TurnResult, String> {
         let idx = self.current_player_idx;
         if !matches!(self.step, GameStep::WaitingForAirportDestination) {
             return Err("Nu ești în etapa de a alege destinația de zbor!".to_string());
         }
 
         self.players[idx].position = target_position as usize;
-        println!("🛬 {} a aterizat pe poziția {}!", self.players[idx].name, target_position);
+        println!(
+            "🛬 {} a aterizat pe poziția {}!",
+            self.players[idx].name, target_position
+        );
 
         self.step = GameStep::WaitingForRoll; // Reset implicitly for now
         self.handle_landing();
@@ -582,12 +752,22 @@ impl Game {
     }
 
     /// Folosește un cartonaș Here&Now din mână
-    pub fn use_here_and_now_card(&mut self, player_idx: usize, card_id: String) -> Result<TurnResult, String> {
-        let card_idx = self.players[player_idx].here_and_now_cards.iter().position(|c| c.id == card_id)
+    pub fn use_here_and_now_card(
+        &mut self,
+        player_idx: usize,
+        card_id: String,
+    ) -> Result<TurnResult, String> {
+        let card_idx = self.players[player_idx]
+            .here_and_now_cards
+            .iter()
+            .position(|c| c.id == card_id)
             .ok_or_else(|| "Nu deții acest cartonaș!".to_string())?;
 
         let card = self.players[player_idx].here_and_now_cards.remove(card_idx);
-        println!("🎭 {} folosește cartonașul: {}", self.players[player_idx].name, card.description);
+        println!(
+            "🎭 {} folosește cartonașul: {}",
+            self.players[player_idx].name, card.description
+        );
 
         self.execute_here_and_now_action(player_idx, card.action.clone())?;
         self.here_and_now_deck.discard(card);
@@ -599,14 +779,21 @@ impl Game {
             is_forced_deal: false,
             new_position: self.players[player_idx].position as u8,
             went_to_jail: false,
-            turn_ends: false, 
+            turn_ends: false,
             current_player_index: self.current_player_idx as u8,
         })
     }
 
-    fn execute_here_and_now_action(&mut self, player_idx: usize, action: HereAndNowCardAction) -> Result<(), String> {
+    fn execute_here_and_now_action(
+        &mut self,
+        player_idx: usize,
+        action: HereAndNowCardAction,
+    ) -> Result<(), String> {
         match action {
             HereAndNowCardAction::MoveSteps(steps) => {
+                if player_idx != self.current_player_idx {
+                    return Err("Poți folosi această carte de mișcare doar în tura ta.".to_string());
+                }
                 let board_size = self.board.spaces.len();
                 if self.players[player_idx].move_by(steps, board_size) {
                     println!("💰 Ai trecut pe la START! Primești M200.");
@@ -627,26 +814,20 @@ impl Game {
                 }
             }
             HereAndNowCardAction::SwapStamps => {
-                let my_stamp = self.players[player_idx].passport.remove_last_stamp();
-                if let Some(s1) = my_stamp {
-                    for i in 0..self.players.len() {
-                        if i != player_idx {
-                            if let Some(s2) = self.players[i].passport.remove_last_stamp() {
-                                println!("♻️ Schimb de ștampile între {} și {}!", self.players[player_idx].name, self.players[i].name);
-                                self.add_stamp_with_checks(player_idx, s2);
-                                self.add_stamp_with_checks(i, s1);
-                                return Ok(());
-                            }
-                        }
-                    }
-                    self.players[player_idx].passport.add_stamp(s1);
-                }
+                self.step = GameStep::WaitingForTargetSelection {
+                    source_idx: player_idx,
+                    purpose: "swap_stamps".to_string(),
+                };
+                println!("🎯 Alege jucătorul cu care vrei să schimbi ultima ștampilă.");
             }
             HereAndNowCardAction::TakeAllLastStamps => {
                 for i in 0..self.players.len() {
                     if i != player_idx {
                         if let Some(stamp) = self.players[i].passport.remove_last_stamp() {
-                             println!("🚫 Ștampila {} a lui {} a fost scoasă din pașaport!", stamp.name, self.players[i].name);
+                            println!(
+                                "🚫 Ștampila {} a lui {} a fost scoasă din pașaport!",
+                                stamp.name, self.players[i].name
+                            );
                         }
                     }
                 }
@@ -666,41 +847,65 @@ impl Game {
                     if self.players[richest_idx].money >= amount {
                         self.players[richest_idx].pay_money(amount);
                         self.players[player_idx].add_money(amount);
-                        println!("💰 {} (cel mai bogat) ți-a plătit M200!", self.players[richest_idx].name);
+                        println!(
+                            "💰 {} (cel mai bogat) ți-a plătit M200!",
+                            self.players[richest_idx].name
+                        );
                     } else {
-                         let money = self.players[richest_idx].money;
-                         self.players[richest_idx].pay_money(money);
-                         self.players[player_idx].add_money(money);
-                         println!("💰 {} ți-a plătit tot ce avea (M{})!", self.players[richest_idx].name, money);
+                        let money = self.players[richest_idx].money;
+                        self.players[richest_idx].pay_money(money);
+                        self.players[player_idx].add_money(money);
+                        println!(
+                            "💰 {} ți-a plătit tot ce avea (M{})!",
+                            self.players[richest_idx].name, money
+                        );
                     }
                 }
             }
-            HereAndNowCardAction::InterceptPurchase => self.players[player_idx].intercept_purchase_ready = true,
-            HereAndNowCardAction::SayNo => self.players[player_idx].say_no_cards += 1,
-            HereAndNowCardAction::DiscountPurchase => self.players[player_idx].discount_purchase_ready = true,
+            HereAndNowCardAction::InterceptPurchase => {
+                self.players[player_idx].intercept_purchase_ready = true
+            }
+            HereAndNowCardAction::SayNo => {
+                self.apply_say_no(player_idx)?;
+            }
+            HereAndNowCardAction::DiscountPurchase => {
+                self.players[player_idx].discount_purchase_ready = true
+            }
             HereAndNowCardAction::CollectTax => self.players[player_idx].collect_tax_ready = true,
-            HereAndNowCardAction::StealFirstClass => self.players[player_idx].steal_first_class_ready = true,
+            HereAndNowCardAction::StealFirstClass => {
+                self.players[player_idx].steal_first_class_ready = true
+            }
         }
         Ok(())
     }
 
     fn end_turn(&mut self) {
-        if self.players[self.current_player_idx].consecutive_doubles == 0 || self.players[self.current_player_idx].in_jail {
-             // Logică incrementare tură globală
+        if self.players[self.current_player_idx].consecutive_doubles == 0
+            || self.players[self.current_player_idx].in_jail
+        {
+            // Logică incrementare tură globală
             if self.current_player_idx == self.players.len() - 1 {
                 self.turn_number += 1;
                 println!("\n{}", "=".repeat(60).on_bright_blue().white());
-                println!("{}  ÎNCEPE TURA GLOBALĂ #{}  {}", "🌍".yellow(), self.turn_number, "🌍".yellow());
+                println!(
+                    "{}  ÎNCEPE TURA GLOBALĂ #{}  {}",
+                    "🌍".yellow(),
+                    self.turn_number,
+                    "🌍".yellow()
+                );
             }
-            
+
             self.current_player_idx = (self.current_player_idx + 1) % self.players.len();
             self.step = GameStep::WaitingForRoll;
-            
-            println!("\n{} {}", "Rândul jucătorului:".green().bold(), self.players[self.current_player_idx].name.yellow().bold());
-        } 
+
+            println!(
+                "\n{} {}",
+                "Rândul jucătorului:".green().bold(),
+                self.players[self.current_player_idx].name.yellow().bold()
+            );
+        }
         // Dacă are duble consecutive > 0 și nu e în închisoare, RĂMÂNE pe același player (nu apelăm end_turn în roll_dice pt duble)
     }
-
 
     // --- Helper intern redenumit pentru claritate ---
     fn roll_dice_internal() -> DiceResult {
@@ -713,13 +918,12 @@ impl Game {
             return DiceResult::BusinessDeal(d2);
         }
 
-        if d1 == d2 { 
-            DiceResult::Double(d1) 
-        } else { 
-            DiceResult::Normal(d1, d2) 
+        if d1 == d2 {
+            DiceResult::Double(d1)
+        } else {
+            DiceResult::Normal(d1, d2)
         }
     }
-
 
     fn display_dice_result(&self, result: &DiceResult) {
         match result {
@@ -742,10 +946,12 @@ impl Game {
 
         let passed_start = player.move_by(steps, board_size);
 
-        println!("\n{} se mută de la poziția {} la poziția {}",
-                 player.name.yellow(),
-                 old_position,
-                 player.position);
+        println!(
+            "\n{} se mută de la poziția {} la poziția {}",
+            player.name.yellow(),
+            old_position,
+            player.position
+        );
 
         if passed_start {
             player.add_money(200);
@@ -769,12 +975,22 @@ impl Game {
     }
 
     /// Folosește un cartonaș Șansă din mână (ex: Ieșire din închisoare)
-    pub fn use_chance_card(&mut self, player_idx: usize, card_id: String) -> Result<TurnResult, String> {
-        let card_idx = self.players[player_idx].chance_cards.iter().position(|c| c.id == card_id)
+    pub fn use_chance_card(
+        &mut self,
+        player_idx: usize,
+        card_id: String,
+    ) -> Result<TurnResult, String> {
+        let card_idx = self.players[player_idx]
+            .chance_cards
+            .iter()
+            .position(|c| c.id == card_id)
             .ok_or_else(|| "Nu deții acest cartonaș!".to_string())?;
 
         let card = self.players[player_idx].chance_cards.remove(card_idx);
-        println!("🎲 {} folosește cartonașul Șansă: {}", self.players[player_idx].name, card.description);
+        println!(
+            "🎲 {} folosește cartonașul Șansă: {}",
+            self.players[player_idx].name, card.description
+        );
 
         self.execute_chance_action(player_idx, card.action.clone())?;
         self.chance_deck.discard(card);
@@ -786,12 +1002,16 @@ impl Game {
             is_forced_deal: false,
             new_position: self.players[player_idx].position as u8,
             went_to_jail: false,
-            turn_ends: false, 
+            turn_ends: false,
             current_player_index: self.current_player_idx as u8,
         })
     }
 
-    fn execute_chance_action(&mut self, idx: usize, action: ChanceCardAction) -> Result<(), String> {
+    fn execute_chance_action(
+        &mut self,
+        idx: usize,
+        action: ChanceCardAction,
+    ) -> Result<(), String> {
         match action {
             ChanceCardAction::CollectMoney(amount) => {
                 self.players[idx].add_money(amount);
@@ -818,17 +1038,28 @@ impl Game {
 
                 let gain = 40 * count;
                 self.players[idx].add_money(gain);
-                println!("{}", format!("Ai {} ștampile First Class => primești M{}", count, gain).bright_green());
+                println!(
+                    "{}",
+                    format!("Ai {} ștampile First Class => primești M{}", count, gain)
+                        .bright_green()
+                );
             }
 
             ChanceCardAction::CollectFromEachPlayer(amount) => {
-                println!("{}", format!("Colectezi M{} de la fiecare jucător", amount).green());
+                println!(
+                    "{}",
+                    format!("Colectezi M{} de la fiecare jucător", amount).green()
+                );
                 for i in 0..self.players.len() {
                     if i != idx {
                         if self.players[i].pay_money(amount) {
                             self.players[idx].add_money(amount);
                         } else {
-                            println!("{}", format!("{} nu are bani suficienți!", self.players[i].name).yellow());
+                            println!(
+                                "{}",
+                                format!("{} nu are bani suficienți!", self.players[i].name)
+                                    .yellow()
+                            );
                         }
                     }
                 }
@@ -847,6 +1078,10 @@ impl Game {
 
             ChanceCardAction::GoToJail => {
                 self.players[idx].send_to_jail();
+                self.record_action(GameAction::SentToJail {
+                    player_idx: idx,
+                    reason: "chance_card".to_string(),
+                });
                 println!("{}", "Mergi direct la închisoare! (Fără START)".red());
             }
 
@@ -864,63 +1099,67 @@ impl Game {
             ChanceCardAction::RerollOneDie => {
                 let mut rng = rand::thread_rng();
                 let d = rng.gen_range(1..=6);
-                println!("{}", format!("Arunci încă un zar: {}. Te muți {} spații.", d, d).cyan());
+                println!(
+                    "{}",
+                    format!("Arunci încă un zar: {}. Te muți {} spații.", d, d).cyan()
+                );
                 self.move_player(d);
                 self.handle_landing();
             }
 
             ChanceCardAction::DiceChallenge => {
-                let opponent = (0..self.players.len()).find(|&i| i != idx);
-                if let Some(opp) = opponent {
-                    let mut rng = rand::thread_rng();
-                    let my = rng.gen_range(1..=6);
-                    let his = rng.gen_range(1..=6);
-                    println!("{}", format!("Duel zaruri: tu={} vs {}={}", my, self.players[opp].name, his).bright_cyan());
-
-                    if my > his {
-                        println!("{}", format!("{} plătește M100 către tine.", self.players[opp].name).green());
-                        if self.players[opp].pay_money(100) {
-                            self.players[idx].add_money(100);
-                        }
-                    } else if his > my {
-                        println!("{}", format!("Tu plătești M100 către {}.", self.players[opp].name).yellow());
-                        if self.players[idx].pay_money(100) {
-                            self.players[opp].add_money(100);
-                        }
-                    } else {
-                        println!("Egalitate! Nimeni nu plătește.");
-                    }
-                }
+                self.step = GameStep::WaitingForTargetSelection {
+                    source_idx: idx,
+                    purpose: "dice_duel".to_string(),
+                };
+                println!("🎯 Alege jucătorul țintă pentru duelul de zaruri.");
             }
             ChanceCardAction::SwapTwoPlayersStamps => {
                 // Simplificat: primii doi jucători diferiți de robot? sau primii doi în general
-                 if self.players.len() >= 2 {
-                     let (idx1, idx2) = (0, 1);
-                     let s1 = self.players[idx1].passport.remove_last_stamp();
-                     let s2 = self.players[idx2].passport.remove_last_stamp();
-                     
-                     if let Some(stamp1) = s1 { self.players[idx2].passport.add_stamp(stamp1); }
-                     if let Some(stamp2) = s2 { self.players[idx1].passport.add_stamp(stamp2); }
-                     
-                     println!("♻️ Schimb de ștampile între {} și {}!", self.players[idx1].name, self.players[idx2].name);
-                 }
+                if self.players.len() >= 2 {
+                    let (idx1, idx2) = (0, 1);
+                    let s1 = self.players[idx1].passport.remove_last_stamp();
+                    let s2 = self.players[idx2].passport.remove_last_stamp();
+
+                    if let Some(stamp1) = s1 {
+                        self.players[idx2].passport.add_stamp(stamp1);
+                    }
+                    if let Some(stamp2) = s2 {
+                        self.players[idx1].passport.add_stamp(stamp2);
+                    }
+
+                    println!(
+                        "♻️ Schimb de ștampile între {} și {}!",
+                        self.players[idx1].name, self.players[idx2].name
+                    );
+                }
             }
             ChanceCardAction::StealStampAndPay => {
-                 let target = (0..self.players.len()).find(|&i| i != idx);
-                 if let Some(t_idx) = target {
-                     if let Some(stamp) = self.players[t_idx].passport.remove_last_stamp() {
-                         // Plătim valoarea (estimată la M100 pentru simplitate, regulile pot varia)
-                         if self.players[idx].pay_money(150) {
-                             self.players[t_idx].add_money(150);
-                             let stamp_name = stamp.name.clone();
-                             self.add_stamp_with_checks(idx, stamp);
-                             println!("💸 Ai furat ștampila {} de la {} pentru M150!", stamp_name, self.players[t_idx].name);
-                         } else {
-                             self.players[t_idx].passport.add_stamp(stamp); // returnăm
-                             println!("Nu ai destui bani să plătești ștampila!");
-                         }
-                     }
-                 }
+                let target = (0..self.players.len()).find(|&i| i != idx);
+                if let Some(t_idx) = target {
+                    if let Some(stamp) = self.players[t_idx].passport.remove_last_stamp() {
+                        let moved_stamp = stamp.clone();
+                        // Plătim valoarea (estimată la M100 pentru simplitate, regulile pot varia)
+                        if self.players[idx].pay_money(150) {
+                            self.players[t_idx].add_money(150);
+                            let stamp_name = stamp.name.clone();
+                            self.add_stamp_with_checks(idx, stamp);
+                            self.record_action(GameAction::StampTransfer {
+                                from_idx: t_idx,
+                                to_idx: idx,
+                                stamp: moved_stamp,
+                                reason: "chance_steal".to_string(),
+                            });
+                            println!(
+                                "💸 Ai furat ștampila {} de la {} pentru M150!",
+                                stamp_name, self.players[t_idx].name
+                            );
+                        } else {
+                            self.players[t_idx].passport.add_stamp(stamp); // returnăm
+                            println!("Nu ai destui bani să plătești ștampila!");
+                        }
+                    }
+                }
             }
         }
         Ok(())
@@ -929,7 +1168,11 @@ impl Game {
         let position = self.players[self.current_player_idx].position;
         let space = self.board.get_space(position).clone();
 
-        println!("\n{} {}", "📍 Ai ajuns pe:".cyan(), self.get_space_name(&space).yellow().bold());
+        println!(
+            "\n{} {}",
+            "📍 Ai ajuns pe:".cyan(),
+            self.get_space_name(&space).yellow().bold()
+        );
 
         match space {
             Space::Start => {
@@ -957,6 +1200,10 @@ impl Game {
                 println!("{}", "👮 Mergi direct la ÎNCHISOARE!".red());
                 let player = &mut self.players[self.current_player_idx];
                 player.send_to_jail();
+                self.record_action(GameAction::SentToJail {
+                    player_idx: self.current_player_idx,
+                    reason: "board_space".to_string(),
+                });
             }
             Space::JustVisiting => {
                 println!("{}", "👀 Doar în vizită la închisoare.".cyan());
@@ -965,15 +1212,20 @@ impl Game {
     }
 
     fn handle_destination(&mut self, dest: Destination) {
-        println!("🌍 {} - Preț: M{}, Taxă: M{}",
-                 dest.name, dest.price, dest.tourist_tax);
+        println!(
+            "🌍 {} - Preț: M{}, Taxă: M{}",
+            dest.name, dest.price, dest.tourist_tax
+        );
 
         // Verificăm cine deține această destinație
         let owner_idx = self.find_destination_owner(dest.id);
 
         if let Some(owner_idx) = owner_idx {
             if owner_idx == self.current_player_idx {
-                println!("{}", "Aceasta este destinația ta! Nu plătești nimic.".green());
+                println!(
+                    "{}",
+                    "Aceasta este destinația ta! Nu plătești nimic.".green()
+                );
             } else {
                 // Trebuie să plătim taxă
                 let mut tax = dest.tourist_tax;
@@ -982,43 +1234,71 @@ impl Game {
                 if let Some(color_set) = self.board.color_sets.get(&dest.color) {
                     if self.players[owner_idx].has_color_set(color_set) {
                         tax *= 2;
-                        println!("{}", "⚠️ Proprietarul are setul complet! Taxa este DUBLĂ!".red());
+                        println!(
+                            "{}",
+                            "⚠️ Proprietarul are setul complet! Taxa este DUBLĂ!".red()
+                        );
                     }
                 }
 
                 // Verificăm dacă proprietarul are bonus dublu activ
                 if self.players[owner_idx].double_rent_active {
                     tax *= 2;
-                    println!("{}", "⚠️ Proprietarul are bonus Here&Now activ! Taxa este DUBLĂ!".red());
+                    println!(
+                        "{}",
+                        "⚠️ Proprietarul are bonus Here&Now activ! Taxa este DUBLĂ!".red()
+                    );
                     self.players[owner_idx].double_rent_active = false;
                 }
 
                 // ✅ COLLECT TAX: jucătorul curent colectează taxa în loc să o plătească
                 if self.players[self.current_player_idx].collect_tax_ready {
-                    println!("{}", "🧾 COLLECT TAX ACTIV! Colectezi taxa în loc să o plătești!".bright_green());
+                    println!(
+                        "{}",
+                        "🧾 COLLECT TAX ACTIV! Colectezi taxa în loc să o plătești!".bright_green()
+                    );
 
-                    if self.players[owner_idx].pay_money(tax) {
-                        self.players[self.current_player_idx].add_money(tax);
-                        println!("{}", format!("{} îți plătește M{}", self.players[owner_idx].name, tax).green());
+                    if self.perform_money_transfer(
+                        owner_idx,
+                        self.current_player_idx,
+                        tax,
+                        "collect_tax",
+                    ) {
+                        println!(
+                            "{}",
+                            format!("{} îți plătește M{}", self.players[owner_idx].name, tax)
+                                .green()
+                        );
                     } else {
-                        println!("{}", format!("{} nu are bani!", self.players[owner_idx].name).yellow());
+                        println!(
+                            "{}",
+                            format!("{} nu are bani!", self.players[owner_idx].name).yellow()
+                        );
                     }
 
                     self.players[self.current_player_idx].collect_tax_ready = false;
 
                     // Găsim și ștergem cardul din mână
-                    if let Some(pos) = self.players[self.current_player_idx].here_and_now_cards.iter().position(|c| matches!(c.action, HereAndNowCardAction::CollectTax)) {
-                        let card = self.players[self.current_player_idx].here_and_now_cards.remove(pos);
+                    if let Some(pos) = self.players[self.current_player_idx]
+                        .here_and_now_cards
+                        .iter()
+                        .position(|c| matches!(c.action, HereAndNowCardAction::CollectTax))
+                    {
+                        let card = self.players[self.current_player_idx]
+                            .here_and_now_cards
+                            .remove(pos);
                         self.here_and_now_deck.discard(card);
                     }
 
                     return;
                 }
 
-                println!("{}", format!("Plătești M{} către {}", tax, self.players[owner_idx].name).yellow());
+                println!(
+                    "{}",
+                    format!("Plătești M{} către {}", tax, self.players[owner_idx].name).yellow()
+                );
 
-                if self.players[self.current_player_idx].pay_money(tax) {
-                    self.players[owner_idx].add_money(tax);
+                if self.perform_money_transfer(self.current_player_idx, owner_idx, tax, "rent") {
                     println!("{}", "Taxă plătită!".green());
                 } else {
                     println!("{}", "Nu ai suficienți bani!".red());
@@ -1027,7 +1307,10 @@ impl Game {
             }
         } else {
             // Destinația nu este deținută de nimeni
-            println!("\n{}", "Această destinație nu este deținută de nimeni!".cyan());
+            println!(
+                "\n{}",
+                "Această destinație nu este deținută de nimeni!".cyan()
+            );
 
             let mut final_price = dest.price;
             let mut buyer_idx = self.current_player_idx;
@@ -1035,13 +1318,22 @@ impl Game {
             // ✅ DISCOUNT PURCHASE: plătești doar M100
             if self.players[self.current_player_idx].discount_purchase_ready {
                 final_price = 100;
-                println!("{}", "💸 DISCOUNT PURCHASE ACTIV! Plătești doar M100!".bright_green());
+                println!(
+                    "{}",
+                    "💸 DISCOUNT PURCHASE ACTIV! Plătești doar M100!".bright_green()
+                );
 
                 self.players[self.current_player_idx].discount_purchase_ready = false;
 
                 // Găsim și ștergem cardul din mână
-                if let Some(pos) = self.players[self.current_player_idx].here_and_now_cards.iter().position(|c| matches!(c.action, HereAndNowCardAction::DiscountPurchase)) {
-                    let card = self.players[self.current_player_idx].here_and_now_cards.remove(pos);
+                if let Some(pos) = self.players[self.current_player_idx]
+                    .here_and_now_cards
+                    .iter()
+                    .position(|c| matches!(c.action, HereAndNowCardAction::DiscountPurchase))
+                {
+                    let card = self.players[self.current_player_idx]
+                        .here_and_now_cards
+                        .remove(pos);
                     self.here_and_now_deck.discard(card);
                 }
             }
@@ -1050,13 +1342,22 @@ impl Game {
             for i in 0..self.players.len() {
                 if i != self.current_player_idx && self.players[i].intercept_purchase_ready {
                     if self.players[i].money >= final_price {
-                        println!("{}", format!("🎯 {} INTERCEPTEAZĂ cumpărarea cu cardul Here&Now!", self.players[i].name).bright_magenta());
+                        println!(
+                            "{}",
+                            format!(
+                                "🎯 {} INTERCEPTEAZĂ cumpărarea cu cardul Here&Now!",
+                                self.players[i].name
+                            )
+                            .bright_magenta()
+                        );
                         buyer_idx = i;
 
                         self.players[i].intercept_purchase_ready = false;
 
                         // Găsim și ștergem cardul din mână
-                        if let Some(pos) = self.players[i].here_and_now_cards.iter().position(|c| matches!(c.action, HereAndNowCardAction::InterceptPurchase)) {
+                        if let Some(pos) = self.players[i].here_and_now_cards.iter().position(|c| {
+                            matches!(c.action, HereAndNowCardAction::InterceptPurchase)
+                        }) {
                             let card = self.players[i].here_and_now_cards.remove(pos);
                             self.here_and_now_deck.discard(card);
                         }
@@ -1071,9 +1372,10 @@ impl Game {
             // Verificăm dacă jucătorul are bani - dacă da, așteptăm decizia
             if self.players[buyer_idx].money >= final_price {
                 // Setăm starea pentru a aștepta decizia jucătorului
-                self.step = GameStep::WaitingForPurchaseDecision { 
-                    dest_id: dest.id, 
-                    price: final_price 
+                self.step = GameStep::WaitingForPurchaseDecision {
+                    dest_id: dest.id,
+                    price: final_price,
+                    buyer_idx,
                 };
                 println!("Așteptăm decizia jucătorului...");
                 // Nu facem nimic altceva - metoda resolve_purchase() va gestiona restul
@@ -1130,7 +1432,10 @@ impl Game {
         match card.action {
             HereAndNowCardAction::SayNo => {
                 self.players[idx].say_no_cards += 1;
-                println!("{}", "✅ Ai primit 'Spune nu!' (îl poți folosi oricând).".bright_green());
+                println!(
+                    "{}",
+                    "✅ Ai primit 'Spune nu!' (îl poți folosi oricând).".bright_green()
+                );
             }
             HereAndNowCardAction::InterceptPurchase => {
                 self.players[idx].intercept_purchase_ready = true;
@@ -1138,18 +1443,29 @@ impl Game {
             }
             HereAndNowCardAction::DiscountPurchase => {
                 self.players[idx].discount_purchase_ready = true;
-                println!("{}", "✅ Discount Purchase este ACTIV (următorul loc nedeținut: plătești M100).".bright_green());
+                println!(
+                    "{}",
+                    "✅ Discount Purchase este ACTIV (următorul loc nedeținut: plătești M100)."
+                        .bright_green()
+                );
             }
             HereAndNowCardAction::CollectTax => {
                 self.players[idx].collect_tax_ready = true;
-                println!("{}", "✅ Collect Tax este ACTIV (la următoarea taxă, colectezi în loc să plătești).".bright_green());
+                println!(
+                    "{}",
+                    "✅ Collect Tax este ACTIV (la următoarea taxă, colectezi în loc să plătești)."
+                        .bright_green()
+                );
             }
             HereAndNowCardAction::StealFirstClass => {
                 self.players[idx].steal_first_class_ready = true;
                 println!("{}", "✅ Steal First Class este ACTIV (când altcineva primește First Class, îl furi).".bright_green());
             }
             _ => {
-                println!("{}", "✅ Cartonaș păstrat în mână (folosibil oricând).".bright_green());
+                println!(
+                    "{}",
+                    "✅ Cartonaș păstrat în mână (folosibil oricând).".bright_green()
+                );
             }
         }
     }
@@ -1164,7 +1480,10 @@ impl Game {
 
         if card.can_keep {
             self.players[idx].chance_cards.push(card);
-            println!("{}", "✅ Cartonaș păstrat în mână (folosibil oricând).".bright_green());
+            println!(
+                "{}",
+                "✅ Cartonaș păstrat în mână (folosibil oricând).".bright_green()
+            );
         } else {
             let action = card.action.clone();
             let _ = self.execute_chance_action(idx, action);
@@ -1189,17 +1508,27 @@ impl Game {
                 Some(idx)
             }
         } else {
-            self.players.iter()
+            self.players
+                .iter()
                 .enumerate()
                 .find(|(i, p)| *i != current_player_idx && p.passport.stamp_count() > 0)
                 .map(|(i, _)| i)
         };
 
         if let Some(opp_idx) = opp_idx {
-            if let Some(my_stamp) = self.players[current_player_idx].passport.remove_last_stamp() {
+            if let Some(my_stamp) = self.players[current_player_idx]
+                .passport
+                .remove_last_stamp()
+            {
                 if let Some(opp_stamp) = self.players[opp_idx].passport.remove_last_stamp() {
-                    println!("{}", format!("Schimbi '{}' cu '{}' de la {}",
-                                           my_stamp.name, opp_stamp.name, self.players[opp_idx].name).bright_magenta());
+                    println!(
+                        "{}",
+                        format!(
+                            "Schimbi '{}' cu '{}' de la {}",
+                            my_stamp.name, opp_stamp.name, self.players[opp_idx].name
+                        )
+                        .bright_magenta()
+                    );
 
                     self.add_stamp_with_checks(current_player_idx, opp_stamp);
                     self.add_stamp_with_checks(opp_idx, my_stamp);
@@ -1214,7 +1543,10 @@ impl Game {
                 }
             }
         } else {
-            println!("{}", "Niciun adversar nu are stampile de schimbat!".yellow());
+            println!(
+                "{}",
+                "Niciun adversar nu are stampile de schimbat!".yellow()
+            );
         }
     }
 
@@ -1237,7 +1569,14 @@ impl Game {
     /// Helper pentru a adăuga o proprietate unui jucător, a verifica seturile și a verifica victoria
     fn acquire_property(&mut self, player_idx: usize, dest: &Destination) -> bool {
         let stamp = Stamp::from_destination(dest);
-        println!("{}", format!("✅ {} a cumpărat destinația {} și a primit stampila!", self.players[player_idx].name, dest.name).green());
+        println!(
+            "{}",
+            format!(
+                "✅ {} a cumpărat destinația {} și a primit stampila!",
+                self.players[player_idx].name, dest.name
+            )
+            .green()
+        );
         self.add_stamp_with_checks(player_idx, stamp)
     }
 
@@ -1272,7 +1611,10 @@ impl Game {
             self.first_class_stamps_available -= 1;
 
             if free {
-                println!("{}", "✅ Ai primit stampila Clasa Întâi GRATUIT!".bright_green());
+                println!(
+                    "{}",
+                    "✅ Ai primit stampila Clasa Întâi GRATUIT!".bright_green()
+                );
             } else {
                 println!("{}", "✅ Ai cumpărat stampila Clasa Întâi!".green());
             }
@@ -1291,16 +1633,31 @@ impl Game {
 
         if let Some(stamp) = self.players[player_idx].passport.remove_last_stamp() {
             if let Some(creditor) = creditor_idx {
-                println!("{}", format!("Ultima ștampilă '{}' merge la {}",
-                                       stamp.name, self.players[creditor].name).red());
+                println!(
+                    "{}",
+                    format!(
+                        "Ultima ștampilă '{}' merge la {}",
+                        stamp.name, self.players[creditor].name
+                    )
+                    .red()
+                );
                 self.add_stamp_with_checks(creditor, stamp);
             } else {
-                println!("{}", format!("Ultima ștampilă '{}' revine pe tablă", stamp.name).red());
+                println!(
+                    "{}",
+                    format!("Ultima ștampilă '{}' revine pe tablă", stamp.name).red()
+                );
             }
         }
 
-        println!("{}", format!("{} rămâne fără bani dar continuă să joace!",
-                               self.players[player_idx].name).yellow());
+        println!(
+            "{}",
+            format!(
+                "{} rămâne fără bani dar continuă să joace!",
+                self.players[player_idx].name
+            )
+            .yellow()
+        );
     }
 
     fn find_destination_owner(&self, dest_id: u8) -> Option<usize> {
@@ -1330,8 +1687,192 @@ impl Game {
         }
     }
 
+    pub fn resolve_target_selection(&mut self, target_name: String) -> Result<TurnResult, String> {
+        let (source_idx, purpose) = match &self.step {
+            GameStep::WaitingForTargetSelection {
+                source_idx,
+                purpose,
+            } => (*source_idx, purpose.clone()),
+            _ => return Err("Not waiting for target selection".to_string()),
+        };
+
+        let target_idx = self
+            .players
+            .iter()
+            .position(|p| p.name == target_name)
+            .ok_or_else(|| "Target player not found".to_string())?;
+        if target_idx == source_idx {
+            return Err("Target must be another player".to_string());
+        }
+
+        if purpose == "swap_stamps" {
+            let my_stamp = self.players[source_idx].passport.remove_last_stamp();
+            if let Some(s1) = my_stamp {
+                if let Some(s2) = self.players[target_idx].passport.remove_last_stamp() {
+                    self.add_stamp_with_checks(source_idx, s2);
+                    self.add_stamp_with_checks(target_idx, s1);
+                } else {
+                    self.players[source_idx].passport.add_stamp(s1);
+                }
+            }
+            self.step = GameStep::WaitingForRoll;
+            return Ok(TurnResult {
+                die1: 0,
+                die2: 0,
+                is_double: false,
+                is_forced_deal: false,
+                new_position: self.players[source_idx].position as u8,
+                went_to_jail: false,
+                turn_ends: false,
+                current_player_index: self.current_player_idx as u8,
+            });
+        }
+
+        if purpose == "dice_duel" {
+            self.step = GameStep::WaitingForDiceDuel {
+                source_idx,
+                target_idx,
+                source_roll: None,
+                target_roll: None,
+            };
+            return Ok(TurnResult {
+                die1: 0,
+                die2: 0,
+                is_double: false,
+                is_forced_deal: false,
+                new_position: self.players[source_idx].position as u8,
+                went_to_jail: false,
+                turn_ends: false,
+                current_player_index: self.current_player_idx as u8,
+            });
+        }
+
+        Err("Unknown target selection purpose".to_string())
+    }
+
+    pub fn roll_duel_dice(&mut self, roller_name: String) -> Result<TurnResult, String> {
+        let (source_idx, target_idx, source_roll, target_roll) = match &self.step {
+            GameStep::WaitingForDiceDuel {
+                source_idx,
+                target_idx,
+                source_roll,
+                target_roll,
+            } => (*source_idx, *target_idx, *source_roll, *target_roll),
+            _ => return Err("Not waiting for dice duel".to_string()),
+        };
+        let roller_idx = self
+            .players
+            .iter()
+            .position(|p| p.name == roller_name)
+            .ok_or_else(|| "Roller not found".to_string())?;
+        if roller_idx != source_idx && roller_idx != target_idx {
+            return Err("Not a duel participant".to_string());
+        }
+
+        let roll = rand::thread_rng().gen_range(1..=6);
+        let mut new_source = source_roll;
+        let mut new_target = target_roll;
+        if roller_idx == source_idx {
+            if new_source.is_some() {
+                return Err("Source already rolled".to_string());
+            }
+            new_source = Some(roll);
+        } else {
+            if new_target.is_some() {
+                return Err("Target already rolled".to_string());
+            }
+            new_target = Some(roll);
+        }
+
+        if let (Some(a), Some(b)) = (new_source, new_target) {
+            if a > b {
+                let _ = self.perform_money_transfer(target_idx, source_idx, 100, "dice_duel");
+            } else if b > a {
+                let _ = self.perform_money_transfer(source_idx, target_idx, 100, "dice_duel");
+            }
+            self.step = GameStep::WaitingForRoll;
+            return Ok(TurnResult {
+                die1: a,
+                die2: b,
+                is_double: false,
+                is_forced_deal: false,
+                new_position: self.players[self.current_player_idx].position as u8,
+                went_to_jail: false,
+                turn_ends: false,
+                current_player_index: self.current_player_idx as u8,
+            });
+        }
+
+        self.step = GameStep::WaitingForDiceDuel {
+            source_idx,
+            target_idx,
+            source_roll: new_source,
+            target_roll: new_target,
+        };
+        Ok(TurnResult {
+            die1: roll,
+            die2: 0,
+            is_double: false,
+            is_forced_deal: false,
+            new_position: self.players[self.current_player_idx].position as u8,
+            went_to_jail: false,
+            turn_ends: false,
+            current_player_index: self.current_player_idx as u8,
+        })
+    }
+
+    fn apply_say_no(&mut self, player_idx: usize) -> Result<(), String> {
+        let mut reverted = false;
+        let len = self.action_history.len();
+        for i in (0..len).rev().take(15) {
+            match self.action_history[i].clone() {
+                GameAction::MoneyTransfer {
+                    from_idx,
+                    to_idx,
+                    amount,
+                    ..
+                } if from_idx == player_idx || to_idx == player_idx => {
+                    if self.players[to_idx].pay_money(amount) {
+                        self.players[from_idx].add_money(amount);
+                        reverted = true;
+                        break;
+                    }
+                }
+                GameAction::StampTransfer {
+                    from_idx,
+                    to_idx,
+                    stamp,
+                    ..
+                } if from_idx == player_idx || to_idx == player_idx => {
+                    if let Some(s) = self.players[to_idx].passport.remove_last_stamp() {
+                        if s.name == stamp.name {
+                            self.players[from_idx].passport.add_stamp(s);
+                            reverted = true;
+                            break;
+                        } else {
+                            self.players[to_idx].passport.add_stamp(s);
+                        }
+                    }
+                }
+                GameAction::SentToJail { player_idx: p, .. } if p == player_idx => {
+                    self.players[player_idx].release_from_jail();
+                    reverted = true;
+                    break;
+                }
+                _ => {}
+            }
+        }
+        if !reverted {
+            return Err("Nu există acțiune recentă de contracarat".to_string());
+        }
+        Ok(())
+    }
+
     fn wait_for_enter(&self) {
-        print!("\n{}", "Apasă ENTER pentru următoarea tură...".bright_black());
+        print!(
+            "\n{}",
+            "Apasă ENTER pentru următoarea tură...".bright_black()
+        );
         io::stdout().flush().unwrap();
         let mut input = String::new();
         io::stdin().read_line(&mut input).unwrap();

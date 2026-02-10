@@ -1,7 +1,7 @@
 <script setup lang="ts">
 import { computed, reactive, watchEffect } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
-import { GET_LOBBY_QUERY, ROLL_DICE_MUTATION, RESOLVE_FORCED_DEAL_MUTATION, RESOLVE_PURCHASE_MUTATION, RESOLVE_FIRST_CLASS_MUTATION, RESOLVE_AIRPORT_DECISION_MUTATION, RESOLVE_AIRPORT_DESTINATION_MUTATION } from '../../graphql/operations'
+import { GET_LOBBY_QUERY, ROLL_DICE_MUTATION, RESOLVE_FORCED_DEAL_MUTATION, RESOLVE_PURCHASE_MUTATION, RESOLVE_FIRST_CLASS_MUTATION, RESOLVE_AIRPORT_DECISION_MUTATION, RESOLVE_AIRPORT_DESTINATION_MUTATION, RESOLVE_TARGET_SELECTION_MUTATION, ROLL_DUEL_DICE_MUTATION } from '../../graphql/operations'
 import Passport from './Passport.vue'
 import Stamp from './Stamp.vue'
 import GameDice from './GameDice.vue'
@@ -28,6 +28,8 @@ const { mutate: resolvePurchaseMutation } = useMutation(RESOLVE_PURCHASE_MUTATIO
 const { mutate: resolveFirstClassMutation } = useMutation(RESOLVE_FIRST_CLASS_MUTATION);
 const { mutate: resolveAirportDecisionMutation } = useMutation(RESOLVE_AIRPORT_DECISION_MUTATION);
 const { mutate: resolveAirportDestinationMutation } = useMutation(RESOLVE_AIRPORT_DESTINATION_MUTATION);
+const { mutate: resolveTargetSelectionMutation } = useMutation(RESOLVE_TARGET_SELECTION_MUTATION);
+const { mutate: rollDuelDiceMutation } = useMutation(ROLL_DUEL_DICE_MUTATION);
 
 // Game simulation state (local representation of server state)
 const gameState = reactive({
@@ -59,6 +61,12 @@ const gameState = reactive({
   pendingFirstClass: false,
   pendingAirportDecision: false,
   pendingAirportDestination: false,
+  pendingTargetSelection: false,
+  pendingDiceDuel: false,
+  diceDuelSource: null as string | null,
+  diceDuelTarget: null as string | null,
+  sourceRoll: null as number | null,
+  targetRoll: null as number | null,
   isGameOver: false,
   winnerName: null as string | null,
   moneyNotifications: [] as Array<{ id: number; amount: string; type: 'plus' | 'minus'; x: number; y: number; playerName: string }>,
@@ -89,6 +97,12 @@ watchEffect(() => {
         gameState.pendingFirstClass = lobby.gameState.pendingFirstClass || false
         gameState.pendingAirportDecision = lobby.gameState.pendingAirportDecision || false
         gameState.pendingAirportDestination = lobby.gameState.pendingAirportDestination || false
+        gameState.pendingTargetSelection = lobby.gameState.pendingTargetSelection || false
+        gameState.pendingDiceDuel = lobby.gameState.pendingDiceDuel || false
+        gameState.diceDuelSource = lobby.gameState.diceDuelSource || null
+        gameState.diceDuelTarget = lobby.gameState.diceDuelTarget || null
+        gameState.sourceRoll = lobby.gameState.sourceRoll ?? null
+        gameState.targetRoll = lobby.gameState.targetRoll ?? null
       }
     }
 
@@ -481,6 +495,18 @@ const handleSelectDestination = async (position: number) => {
   }
 }
 
+
+const selectTargetPlayer = async (targetUsername: string) => {
+  try {
+    await resolveTargetSelectionMutation({ code: props.code, username, target: targetUsername })
+  } catch (e) { console.error('Target select failed', e) }
+}
+
+const rollDuelDice = async () => {
+  try {
+    await rollDuelDiceMutation({ code: props.code, username })
+  } catch (e) { console.error('Duel roll failed', e) }
+}
 // Get current player
 const currentPlayer = computed(() => gameState.players[gameState.currentTurnIndex])
 
@@ -598,7 +624,22 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
               <template v-if="space.type === 'destination'">
                 <span class="space-name">{{ space.name }}</span>
                 <span class="space-price">M{{ space.price }}</span>
-              </template>
+              
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
+</template>
               <template v-else>
                 <div class="special-content-wrapper">
                   <!-- First Class -->
@@ -639,9 +680,39 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                   <template v-else>
                     <span class="space-icon">{{ getSpaceIcon(space.type) }}</span>
                     <span class="space-type-label">{{ space.type.replace(/_/g, ' ').toUpperCase() }}</span>
-                  </template>
+                  
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
+</template>
                 </div>
-              </template>
+              
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
+</template>
             </div>
             
             <!-- Property Stamp -->
@@ -685,7 +756,22 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
               <template v-if="space.type === 'destination'">
                 <span class="space-name">{{ space.name }}</span>
                 <span class="space-price">M{{ space.price }}</span>
-              </template>
+              
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
+</template>
               <template v-else>
                 <div class="special-content-wrapper">
                   <!-- First Class -->
@@ -726,9 +812,39 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                   <template v-else>
                     <span class="space-icon">{{ getSpaceIcon(space.type) }}</span>
                     <span class="space-type-label">{{ space.type.replace(/_/g, ' ').toUpperCase() }}</span>
-                  </template>
+                  
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
+</template>
                 </div>
-              </template>
+              
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
+</template>
             </div>
             <!-- Property Stamp -->
             <div v-if="space.color && !isPropertyOwned(space.id!)" class="property-stamp">
@@ -792,7 +908,22 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                       🚀 Move {{ gameState.diceValue2 }} Spaces
                     </button>
                   </div>
-               </template>
+               
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
+</template>
                <template v-else>
                   <h3>🤝 Who to swap?</h3>
                   <div class="target-selection-grid">
@@ -812,7 +943,22 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                   <button class="modal-btn skip mini" @click="gameState.pickingTarget = false">
                     ⬅ Back
                   </button>
-               </template>
+               
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
+</template>
             </div>
 
             <!-- Normal Dice Panel -->
@@ -954,7 +1100,22 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
               <template v-if="space.type === 'destination'">
                 <span class="space-name">{{ space.name }}</span>
                 <span class="space-price">M{{ space.price }}</span>
-              </template>
+              
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
+</template>
               <template v-else>
                 <div class="special-content-wrapper">
                   <!-- First Class -->
@@ -995,9 +1156,39 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                   <template v-else>
                     <span class="space-icon">{{ getSpaceIcon(space.type) }}</span>
                     <span class="space-type-label">{{ space.type.replace(/_/g, ' ').toUpperCase() }}</span>
-                  </template>
+                  
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
+</template>
                 </div>
-              </template>
+              
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
+</template>
             </div>
             <!-- Property Stamp -->
             <div v-if="space.color && !isPropertyOwned(space.id!)" class="property-stamp">
@@ -1041,7 +1232,22 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
               <template v-if="space.type === 'destination'">
                 <span class="space-name">{{ space.name }}</span>
                 <span class="space-price">M{{ space.price }}</span>
-              </template>
+              
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
+</template>
               <template v-else>
                 <div class="special-content-wrapper">
                   <!-- First Class -->
@@ -1082,9 +1288,39 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                   <template v-else>
                     <span class="space-icon">{{ getSpaceIcon(space.type) }}</span>
                     <span class="space-type-label">{{ space.type.replace(/_/g, ' ').toUpperCase() }}</span>
-                  </template>
+                  
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
+</template>
                 </div>
-              </template>
+              
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
+</template>
             </div>
             <!-- Property Stamp -->
             <div v-if="space.color && !isPropertyOwned(space.id!)" class="property-stamp">
@@ -1185,7 +1421,22 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
               </div>
             </div>
           </div>
-        </template>
+        
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
+</template>
       </div>
 
       <!-- Personal Player Hand -->
@@ -1199,6 +1450,21 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
       />
   </div>
 </div>
+
+  <div v-if="gameState.pendingTargetSelection && isMyTurn" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Alege jucător țintă</h3>
+      <button v-for="p in gameState.players.filter(p=>p.name!==username)" :key="p.name" @click="selectTargetPlayer(p.name)">{{ p.name }}</button>
+    </div>
+  </div>
+
+  <div v-if="gameState.pendingDiceDuel" class="purchase-modal-overlay">
+    <div class="purchase-modal">
+      <h3>Dice Duel</h3>
+      <p>{{ gameState.diceDuelSource }}: {{ gameState.sourceRoll ?? '-' }} | {{ gameState.diceDuelTarget }}: {{ gameState.targetRoll ?? '-' }}</p>
+      <button v-if="username===gameState.diceDuelSource || username===gameState.diceDuelTarget" @click="rollDuelDice">Roll duel die</button>
+    </div>
+  </div>
 </template>
 
 <style scoped>

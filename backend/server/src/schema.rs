@@ -1,10 +1,12 @@
-use async_graphql::{ComplexObject, Context, Object, Schema, EmptySubscription, Result, Error, SimpleObject};
 use crate::database::DB;
-use crate::model::{User, Lobby, Player};
-use mongodb::bson::doc;
+use crate::model::{Lobby, Player, User};
+use async_graphql::{
+    ComplexObject, Context, EmptySubscription, Error, Object, Result, Schema, SimpleObject,
+};
 use chrono::Utc;
-use rand::{distributions::Alphanumeric, Rng};
 use game_engine::game::{Game, GameStep};
+use mongodb::bson::doc;
+use rand::{distributions::Alphanumeric, Rng};
 
 // --- GraphQL Objects for Display ---
 
@@ -25,6 +27,12 @@ pub struct GameStateDisplay {
     pub pending_first_class: bool,
     pub pending_airport_decision: bool,
     pub pending_airport_destination: bool,
+    pub pending_target_selection: bool,
+    pub pending_dice_duel: bool,
+    pub dice_duel_source: Option<String>,
+    pub dice_duel_target: Option<String>,
+    pub source_roll: Option<u8>,
+    pub target_roll: Option<u8>,
     pub is_forced_deal: bool,
     pub is_game_over: bool,
     pub winner_name: Option<String>,
@@ -35,12 +43,14 @@ impl Lobby {
     async fn game_state(&self) -> Option<GameStateDisplay> {
         if let Some(game) = &self.game {
             let (d1, d2) = game.last_dice.unwrap_or((1, 1));
-            
+
             // Check for pending purchase
             let pending_purchase = match &game.step {
-                GameStep::WaitingForPurchaseDecision { dest_id, price } => {
+                GameStep::WaitingForPurchaseDecision { dest_id, price, .. } => {
                     // Find destination name from board
-                    let name = game.board.find_destination_by_id(*dest_id)
+                    let name = game
+                        .board
+                        .find_destination_by_id(*dest_id)
                         .map(|d| d.name.clone())
                         .unwrap_or_else(|| "Unknown".to_string());
                     Some(PendingPurchase {
@@ -48,18 +58,37 @@ impl Lobby {
                         dest_name: name,
                         price: *price,
                     })
-                },
+                }
                 _ => None,
             };
-            
+
             let pending_first_class = game.step == GameStep::WaitingForFirstClassDecision;
             let pending_airport_decision = game.step == GameStep::WaitingForAirportDecision;
             let pending_airport_destination = game.step == GameStep::WaitingForAirportDestination;
-            
+            let pending_target_selection =
+                matches!(game.step, GameStep::WaitingForTargetSelection { .. });
+            let pending_dice_duel = matches!(game.step, GameStep::WaitingForDiceDuel { .. });
+            let (dice_duel_source, dice_duel_target, source_roll, target_roll) = match &game.step {
+                GameStep::WaitingForDiceDuel {
+                    source_idx,
+                    target_idx,
+                    source_roll,
+                    target_roll,
+                } => (
+                    Some(game.players[*source_idx].name.clone()),
+                    Some(game.players[*target_idx].name.clone()),
+                    *source_roll,
+                    *target_roll,
+                ),
+                _ => (None, None, None, None),
+            };
+
             let mut winner_name = None;
             if game.game_over {
                 // Find winner (player with a full passport)
-                winner_name = game.players.iter()
+                winner_name = game
+                    .players
+                    .iter()
                     .find(|p| p.passport.is_full())
                     .map(|p| p.name.clone());
             }
@@ -76,6 +105,12 @@ impl Lobby {
                 pending_first_class,
                 pending_airport_decision,
                 pending_airport_destination,
+                pending_target_selection,
+                pending_dice_duel,
+                dice_duel_source,
+                dice_duel_target,
+                source_roll,
+                target_roll,
                 is_forced_deal: game.step == GameStep::WaitingForForcedDeal,
                 is_game_over: game.game_over,
                 winner_name,
@@ -88,7 +123,11 @@ impl Lobby {
 
 fn sync_lobby_state(players: &mut Vec<Player>, game: &Game) {
     for server_player in players {
-        if let Some(engine_player) = game.players.iter().find(|p| p.name == server_player.username) {
+        if let Some(engine_player) = game
+            .players
+            .iter()
+            .find(|p| p.name == server_player.username)
+        {
             server_player.position = engine_player.position as u8;
             server_player.in_jail = engine_player.in_jail;
             server_player.money = engine_player.money;
@@ -107,21 +146,33 @@ fn sync_lobby_state(players: &mut Vec<Player>, game: &Game) {
             server_player.properties = properties;
 
             // Sync Here & Now cards
-            server_player.here_and_now_cards = engine_player.here_and_now_cards.iter().map(|c| crate::model::GqlHereAndNowCard {
-                id: c.id.clone(),
-                description: c.description.clone(),
-            }).collect();
+            server_player.here_and_now_cards = engine_player
+                .here_and_now_cards
+                .iter()
+                .map(|c| crate::model::GqlHereAndNowCard {
+                    id: c.id.clone(),
+                    description: c.description.clone(),
+                })
+                .collect();
 
             // Sync Chance cards
-            server_player.chance_cards = engine_player.chance_cards.iter().map(|c| crate::model::GqlChanceCard {
-                id: c.id.clone(),
-                description: c.description.clone(),
-            }).collect();
+            server_player.chance_cards = engine_player
+                .chance_cards
+                .iter()
+                .map(|c| crate::model::GqlChanceCard {
+                    id: c.id.clone(),
+                    description: c.description.clone(),
+                })
+                .collect();
         }
     }
 }
 
-fn map_stamp_to_info(s: &game_engine::passport::Stamp, game: &game_engine::game::Game, column: &str) -> crate::model::PropertyInfo {
+fn map_stamp_to_info(
+    s: &game_engine::passport::Stamp,
+    game: &game_engine::game::Game,
+    column: &str,
+) -> crate::model::PropertyInfo {
     let color = if let Some(id) = s.destination_id {
         match game.board.find_destination_by_id(id).map(|d| d.color) {
             Some(game_engine::board::Color::Brown) => "brown",
@@ -133,7 +184,8 @@ fn map_stamp_to_info(s: &game_engine::passport::Stamp, game: &game_engine::game:
             Some(game_engine::board::Color::Green) => "green",
             Some(game_engine::board::Color::DarkBlue) => "darkblue",
             None => "grey",
-        }.to_string()
+        }
+        .to_string()
     } else {
         "grey".to_string()
     };
@@ -160,10 +212,10 @@ impl QueryRoot {
         let lobby = db.lobbies().find_one(doc! { "code": code }, None).await?;
         Ok(lobby)
     }
-    
+
     async fn me(&self, ctx: &Context<'_>, username: String) -> Result<Option<User>> {
-         let db = ctx.data::<DB>()?;
-         Ok(db.find_user_by_username(&username).await?)
+        let db = ctx.data::<DB>()?;
+        Ok(db.find_user_by_username(&username).await?)
     }
 }
 
@@ -171,9 +223,14 @@ pub struct MutationRoot;
 
 #[Object]
 impl MutationRoot {
-    async fn register(&self, ctx: &Context<'_>, username: String, password: String) -> Result<User> {
+    async fn register(
+        &self,
+        ctx: &Context<'_>,
+        username: String,
+        password: String,
+    ) -> Result<User> {
         let db = ctx.data::<DB>()?;
-        
+
         if let Some(_) = db.find_user_by_username(&username).await? {
             return Err(Error::new("Username already exists"));
         }
@@ -187,10 +244,15 @@ impl MutationRoot {
 
         // Note: MongoDB driver 2.8.2 uses insert_one(doc, options)
         let result = db.users().insert_one(new_user.clone(), None).await?;
-        
+
         let mut user = new_user;
-        user.id = Some(result.inserted_id.as_object_id().ok_or(Error::new("Failed to get ID"))?);
-        
+        user.id = Some(
+            result
+                .inserted_id
+                .as_object_id()
+                .ok_or(Error::new("Failed to get ID"))?,
+        );
+
         Ok(user)
     }
 
@@ -203,23 +265,23 @@ impl MutationRoot {
                 if user.password_hash != password {
                     return Err(Error::new("Invalid password"));
                 }
-                
+
                 Ok(user)
-            },
-            None => Err(Error::new("User not found"))
+            }
+            None => Err(Error::new("User not found")),
         }
     }
 
     async fn create_lobby(&self, ctx: &Context<'_>, username: String) -> Result<Lobby> {
         let db = ctx.data::<DB>()?;
-        
+
         let code = generate_code();
 
         let new_lobby = Lobby {
             id: None,
             code: code.clone(),
-            players: vec![Player { 
-                username: username.clone(), 
+            players: vec![Player {
+                username: username.clone(),
                 character: None,
                 position: 0,
                 in_jail: false,
@@ -237,57 +299,74 @@ impl MutationRoot {
 
         let result = db.lobbies().insert_one(new_lobby.clone(), None).await?;
         let mut lobby = new_lobby;
-        lobby.id = Some(result.inserted_id.as_object_id().ok_or(Error::new("Failed to get ID"))?);
+        lobby.id = Some(
+            result
+                .inserted_id
+                .as_object_id()
+                .ok_or(Error::new("Failed to get ID"))?,
+        );
 
         Ok(lobby)
     }
-    
-    async fn join_lobby(&self, ctx: &Context<'_>, code: String, username: String) -> Result<Lobby> {
-         let db = ctx.data::<DB>()?;
-         let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
-         
-         if let Some(mut lobby) = lobby_opt {
-             if lobby.players.len() >= 4 {
-                 return Err(Error::new("Lobby is full"));
-             }
-             if lobby.players.iter().any(|p| p.username == username) {
-                 return Ok(lobby);
-             }
-             if lobby.state != "waiting" {
-                 return Err(Error::new("Game already started"));
-             }
 
-             let new_player = Player { 
-                 username: username.clone(), 
-                 character: None,
-                 position: 0,
-                 in_jail: false,
-                 consecutive_doubles: 0,
-                 money: 1500,
-                 properties: Vec::new(),
-                 here_and_now_cards: Vec::new(),
-                 chance_cards: Vec::new(),
-             };
-             lobby.players.push(new_player.clone());
-             
-             db.lobbies().update_one(
-                 doc! { "_id": lobby.id },
-                 doc! { "$push": { "players": mongodb::bson::to_bson(&new_player).unwrap() } },
-                 None
-             ).await?;
-             
-             Ok(lobby)
-         } else {
-             Err(Error::new("Lobby not found"))
-         }
-    }
-    
-    async fn select_character(&self, ctx: &Context<'_>, code: String, username: String, character: String) -> Result<Lobby> {
+    async fn join_lobby(&self, ctx: &Context<'_>, code: String, username: String) -> Result<Lobby> {
         let db = ctx.data::<DB>()?;
         let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
 
         if let Some(mut lobby) = lobby_opt {
-             if lobby.players.iter().any(|p| p.character.as_ref() == Some(&character) && p.username != username) {
+            if lobby.players.len() >= 4 {
+                return Err(Error::new("Lobby is full"));
+            }
+            if lobby.players.iter().any(|p| p.username == username) {
+                return Ok(lobby);
+            }
+            if lobby.state != "waiting" {
+                return Err(Error::new("Game already started"));
+            }
+
+            let new_player = Player {
+                username: username.clone(),
+                character: None,
+                position: 0,
+                in_jail: false,
+                consecutive_doubles: 0,
+                money: 1500,
+                properties: Vec::new(),
+                here_and_now_cards: Vec::new(),
+                chance_cards: Vec::new(),
+            };
+            lobby.players.push(new_player.clone());
+
+            db.lobbies()
+                .update_one(
+                    doc! { "_id": lobby.id },
+                    doc! { "$push": { "players": mongodb::bson::to_bson(&new_player).unwrap() } },
+                    None,
+                )
+                .await?;
+
+            Ok(lobby)
+        } else {
+            Err(Error::new("Lobby not found"))
+        }
+    }
+
+    async fn select_character(
+        &self,
+        ctx: &Context<'_>,
+        code: String,
+        username: String,
+        character: String,
+    ) -> Result<Lobby> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+
+        if let Some(mut lobby) = lobby_opt {
+            if lobby
+                .players
+                .iter()
+                .any(|p| p.character.as_ref() == Some(&character) && p.username != username)
+            {
                 return Err(Error::new("Character already taken"));
             }
 
@@ -299,16 +378,18 @@ impl MutationRoot {
                     break;
                 }
             }
-            
+
             if !found {
-                 return Err(Error::new("Player not in lobby"));
+                return Err(Error::new("Player not in lobby"));
             }
 
-            db.lobbies().update_one(
-                doc! { "_id": lobby.id, "players.username": username },
-                doc! { "$set": { "players.$.character": character } },
-                None
-            ).await?;
+            db.lobbies()
+                .update_one(
+                    doc! { "_id": lobby.id, "players.username": username },
+                    doc! { "$set": { "players.$.character": character } },
+                    None,
+                )
+                .await?;
 
             Ok(lobby)
         } else {
@@ -328,39 +409,47 @@ impl MutationRoot {
             if lobby.players.len() < 2 {
                 return Err(Error::new("Need at least 2 players to start"));
             }
-            
+
             lobby.state = "playing".to_string();
-            
+
             // Initialize Game Engine
-            let player_names: Vec<String> = lobby.players.iter().map(|p| p.username.clone()).collect();
+            let player_names: Vec<String> =
+                lobby.players.iter().map(|p| p.username.clone()).collect();
             let mut game = Game::new(player_names);
-            
+
             // Randomize starting player
             let starting_player = rand::thread_rng().gen_range(0..lobby.players.len());
             game.current_player_idx = starting_player;
-            
+
             lobby.game = Some(game);
 
             // Save
-            db.lobbies().update_one(
-                doc! { "_id": lobby.id },
-                doc! { 
-                    "$set": { 
-                        "state": "playing",
-                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
-                    } 
-                },
-                None
-            ).await?;
+            db.lobbies()
+                .update_one(
+                    doc! { "_id": lobby.id },
+                    doc! {
+                        "$set": {
+                            "state": "playing",
+                            "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                        }
+                    },
+                    None,
+                )
+                .await?;
 
             Ok(lobby)
         } else {
-             Err(Error::new("Lobby not found"))
+            Err(Error::new("Lobby not found"))
         }
     }
 
     /// Roll dice using Game Engine
-    async fn roll_dice(&self, ctx: &Context<'_>, code: String, username: String) -> Result<RollResult> {
+    async fn roll_dice(
+        &self,
+        ctx: &Context<'_>,
+        code: String,
+        username: String,
+    ) -> Result<RollResult> {
         let db = ctx.data::<DB>()?;
         let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
 
@@ -369,8 +458,11 @@ impl MutationRoot {
                 return Err(Error::new("Game not started"));
             }
 
-            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
-            
+            let game = lobby
+                .game
+                .as_mut()
+                .ok_or(Error::new("No game engine state"))?;
+
             // Validate turn
             let current_idx = game.current_player_idx;
             if current_idx >= game.players.len() {
@@ -381,23 +473,24 @@ impl MutationRoot {
             }
 
             // Execute Roll
-            let result = game.roll_dice()
-                .map_err(|e| Error::new(e))?;
+            let result = game.roll_dice().map_err(|e| Error::new(e))?;
 
             // Sync State
             sync_lobby_state(&mut lobby.players, game);
 
             // Save to DB
-            db.lobbies().update_one(
-                doc! { "_id": lobby.id },
-                doc! { 
-                    "$set": { 
-                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
-                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
-                    } 
-                },
-                None
-            ).await?;
+            db.lobbies()
+                .update_one(
+                    doc! { "_id": lobby.id },
+                    doc! {
+                        "$set": {
+                            "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                            "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                        }
+                    },
+                    None,
+                )
+                .await?;
 
             // Map Result
             Ok(RollResult {
@@ -416,16 +509,26 @@ impl MutationRoot {
     }
 
     /// Resolve forced deal using Game Engine
-    async fn resolve_forced_deal(&self, ctx: &Context<'_>, code: String, username: String, action: String, target: Option<String>) -> Result<Lobby> {
+    async fn resolve_forced_deal(
+        &self,
+        ctx: &Context<'_>,
+        code: String,
+        username: String,
+        action: String,
+        target: Option<String>,
+    ) -> Result<Lobby> {
         let db = ctx.data::<DB>()?;
         let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
 
         if let Some(mut lobby) = lobby_opt {
-            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+            let game = lobby
+                .game
+                .as_mut()
+                .ok_or(Error::new("No game engine state"))?;
 
             // Validate turn
             let current_idx = game.current_player_idx;
-             if game.players[current_idx].name != username {
+            if game.players[current_idx].name != username {
                 return Err(Error::new("Not your turn"));
             }
 
@@ -437,16 +540,18 @@ impl MutationRoot {
             sync_lobby_state(&mut lobby.players, game);
 
             // Save
-            db.lobbies().update_one(
-                doc! { "_id": lobby.id },
-                doc! { 
-                    "$set": { 
-                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
-                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
-                    } 
-                },
-                None
-            ).await?;
+            db.lobbies()
+                .update_one(
+                    doc! { "_id": lobby.id },
+                    doc! {
+                        "$set": {
+                            "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                            "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                        }
+                    },
+                    None,
+                )
+                .await?;
 
             Ok(lobby)
         } else {
@@ -455,12 +560,21 @@ impl MutationRoot {
     }
 
     /// Resolve property purchase decision
-    async fn resolve_purchase(&self, ctx: &Context<'_>, code: String, username: String, buy: bool) -> Result<Lobby> {
+    async fn resolve_purchase(
+        &self,
+        ctx: &Context<'_>,
+        code: String,
+        username: String,
+        buy: bool,
+    ) -> Result<Lobby> {
         let db = ctx.data::<DB>()?;
         let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
 
         if let Some(mut lobby) = lobby_opt {
-            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+            let game = lobby
+                .game
+                .as_mut()
+                .ok_or(Error::new("No game engine state"))?;
 
             // Validate turn
             let current_idx = game.current_player_idx;
@@ -469,23 +583,24 @@ impl MutationRoot {
             }
 
             // Execute Action
-            game.resolve_purchase(buy)
-                .map_err(|e| Error::new(e))?;
+            game.resolve_purchase(buy).map_err(|e| Error::new(e))?;
 
             // Sync State
             sync_lobby_state(&mut lobby.players, game);
 
             // Save
-            db.lobbies().update_one(
-                doc! { "_id": lobby.id },
-                doc! { 
-                    "$set": { 
-                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
-                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
-                    } 
-                },
-                None
-            ).await?;
+            db.lobbies()
+                .update_one(
+                    doc! { "_id": lobby.id },
+                    doc! {
+                        "$set": {
+                            "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                            "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                        }
+                    },
+                    None,
+                )
+                .await?;
 
             Ok(lobby)
         } else {
@@ -494,12 +609,21 @@ impl MutationRoot {
     }
 
     /// Resolve First Class stamp purchase decision
-    async fn resolve_first_class(&self, ctx: &Context<'_>, code: String, username: String, buy: bool) -> Result<Lobby> {
+    async fn resolve_first_class(
+        &self,
+        ctx: &Context<'_>,
+        code: String,
+        username: String,
+        buy: bool,
+    ) -> Result<Lobby> {
         let db = ctx.data::<DB>()?;
         let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
 
         if let Some(mut lobby) = lobby_opt {
-            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+            let game = lobby
+                .game
+                .as_mut()
+                .ok_or(Error::new("No game engine state"))?;
 
             // Validate turn
             let current_idx = game.current_player_idx;
@@ -508,23 +632,24 @@ impl MutationRoot {
             }
 
             // Execute Action
-            game.resolve_first_class(buy)
-                .map_err(|e| Error::new(e))?;
+            game.resolve_first_class(buy).map_err(|e| Error::new(e))?;
 
             // Sync State
             sync_lobby_state(&mut lobby.players, game);
 
             // Save
-            db.lobbies().update_one(
-                doc! { "_id": lobby.id },
-                doc! { 
-                    "$set": { 
-                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
-                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
-                    } 
-                },
-                None
-            ).await?;
+            db.lobbies()
+                .update_one(
+                    doc! { "_id": lobby.id },
+                    doc! {
+                        "$set": {
+                            "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                            "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                        }
+                    },
+                    None,
+                )
+                .await?;
 
             Ok(lobby)
         } else {
@@ -533,12 +658,21 @@ impl MutationRoot {
     }
 
     /// Resolve Airport flight decision
-    async fn resolve_airport_decision(&self, ctx: &Context<'_>, code: String, username: String, buy_flight: bool) -> Result<Lobby> {
+    async fn resolve_airport_decision(
+        &self,
+        ctx: &Context<'_>,
+        code: String,
+        username: String,
+        buy_flight: bool,
+    ) -> Result<Lobby> {
         let db = ctx.data::<DB>()?;
         let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
 
         if let Some(mut lobby) = lobby_opt {
-            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+            let game = lobby
+                .game
+                .as_mut()
+                .ok_or(Error::new("No game engine state"))?;
 
             // Validate turn
             let current_idx = game.current_player_idx;
@@ -554,16 +688,18 @@ impl MutationRoot {
             sync_lobby_state(&mut lobby.players, game);
 
             // Save
-            db.lobbies().update_one(
-                doc! { "_id": lobby.id },
-                doc! { 
-                    "$set": { 
-                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
-                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
-                    } 
-                },
-                None
-            ).await?;
+            db.lobbies()
+                .update_one(
+                    doc! { "_id": lobby.id },
+                    doc! {
+                        "$set": {
+                            "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                            "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                        }
+                    },
+                    None,
+                )
+                .await?;
 
             Ok(lobby)
         } else {
@@ -572,12 +708,21 @@ impl MutationRoot {
     }
 
     /// Resolve Airport destination selection
-    async fn resolve_airport_destination(&self, ctx: &Context<'_>, code: String, username: String, target_position: u8) -> Result<Lobby> {
+    async fn resolve_airport_destination(
+        &self,
+        ctx: &Context<'_>,
+        code: String,
+        username: String,
+        target_position: u8,
+    ) -> Result<Lobby> {
         let db = ctx.data::<DB>()?;
         let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
 
         if let Some(mut lobby) = lobby_opt {
-            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+            let game = lobby
+                .game
+                .as_mut()
+                .ok_or(Error::new("No game engine state"))?;
 
             // Validate turn
             let current_idx = game.current_player_idx;
@@ -593,16 +738,18 @@ impl MutationRoot {
             sync_lobby_state(&mut lobby.players, game);
 
             // Save
-            db.lobbies().update_one(
-                doc! { "_id": lobby.id },
-                doc! { 
-                    "$set": { 
-                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
-                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
-                    } 
-                },
-                None
-            ).await?;
+            db.lobbies()
+                .update_one(
+                    doc! { "_id": lobby.id },
+                    doc! {
+                        "$set": {
+                            "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                            "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                        }
+                    },
+                    None,
+                )
+                .await?;
 
             Ok(lobby)
         } else {
@@ -610,21 +757,78 @@ impl MutationRoot {
         }
     }
 
+    async fn resolve_target_selection(
+        &self,
+        ctx: &Context<'_>,
+        code: String,
+        username: String,
+        target: String,
+    ) -> Result<Lobby> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+        if let Some(mut lobby) = lobby_opt {
+            let game = lobby
+                .game
+                .as_mut()
+                .ok_or(Error::new("No game engine state"))?;
+            game.resolve_target_selection(target)
+                .map_err(|e| Error::new(e))?;
+            sync_lobby_state(&mut lobby.players, game);
+            db.lobbies().update_one(doc! { "_id": lobby.id }, doc! { "$set": { "players": mongodb::bson::to_bson(&lobby.players).unwrap(), "game": mongodb::bson::to_bson(&lobby.game).unwrap() } }, None).await?;
+            Ok(lobby)
+        } else {
+            Err(Error::new("Lobby not found"))
+        }
+    }
+
+    async fn roll_duel_dice(
+        &self,
+        ctx: &Context<'_>,
+        code: String,
+        username: String,
+    ) -> Result<Lobby> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+        if let Some(mut lobby) = lobby_opt {
+            let game = lobby
+                .game
+                .as_mut()
+                .ok_or(Error::new("No game engine state"))?;
+            game.roll_duel_dice(username).map_err(|e| Error::new(e))?;
+            sync_lobby_state(&mut lobby.players, game);
+            db.lobbies().update_one(doc! { "_id": lobby.id }, doc! { "$set": { "players": mongodb::bson::to_bson(&lobby.players).unwrap(), "game": mongodb::bson::to_bson(&lobby.game).unwrap() } }, None).await?;
+            Ok(lobby)
+        } else {
+            Err(Error::new("Lobby not found"))
+        }
+    }
     /// Use a card from hand
-    async fn use_card(&self, ctx: &Context<'_>, code: String, username: String, card_id: String) -> Result<Lobby> {
+    async fn use_card(
+        &self,
+        ctx: &Context<'_>,
+        code: String,
+        username: String,
+        card_id: String,
+    ) -> Result<Lobby> {
         let db = ctx.data::<DB>()?;
         let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
 
         if let Some(mut lobby) = lobby_opt {
-            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+            let game = lobby
+                .game
+                .as_mut()
+                .ok_or(Error::new("No game engine state"))?;
 
             // Find player index
-            let player_idx = game.players.iter().position(|p| p.name == username)
+            let player_idx = game
+                .players
+                .iter()
+                .position(|p| p.name == username)
                 .ok_or_else(|| Error::new("Player not found in game"))?;
 
             // Try to use as Here & Now card first, then Chance card
             let res = game.use_here_and_now_card(player_idx, card_id.clone());
-            
+
             if res.is_err() {
                 // Try Chance card
                 game.use_chance_card(player_idx, card_id)
@@ -635,16 +839,18 @@ impl MutationRoot {
             sync_lobby_state(&mut lobby.players, game);
 
             // Save
-            db.lobbies().update_one(
-                doc! { "_id": lobby.id },
-                doc! { 
-                    "$set": { 
-                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
-                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
-                    } 
-                },
-                None
-            ).await?;
+            db.lobbies()
+                .update_one(
+                    doc! { "_id": lobby.id },
+                    doc! {
+                        "$set": {
+                            "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                            "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                        }
+                    },
+                    None,
+                )
+                .await?;
 
             Ok(lobby)
         } else {
@@ -676,4 +882,3 @@ fn generate_code() -> String {
         .collect::<String>()
         .to_uppercase()
 }
-
