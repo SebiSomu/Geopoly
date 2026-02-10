@@ -332,7 +332,11 @@ impl Game {
             }
 
             let turn_ends = match self.step {
-                GameStep::WaitingForPurchaseDecision { .. } | GameStep::WaitingForFirstClassDecision | GameStep::WaitingForForcedDeal => false,
+                GameStep::WaitingForPurchaseDecision { .. } |
+                GameStep::WaitingForFirstClassDecision |
+                GameStep::WaitingForAirportDecision |
+                GameStep::WaitingForAirportDestination |
+                GameStep::WaitingForForcedDeal => false,
                 _ => true,
             };
 
@@ -380,7 +384,10 @@ impl Game {
 
         // Verificăm dacă am ajuns într-o stare de așteptare decizie
         let turn_ends = match self.step {
-            GameStep::WaitingForPurchaseDecision { .. } | GameStep::WaitingForFirstClassDecision => false,
+            GameStep::WaitingForPurchaseDecision { .. } | 
+            GameStep::WaitingForFirstClassDecision |
+            GameStep::WaitingForAirportDecision |
+            GameStep::WaitingForAirportDestination => false,
             _ => true,
         };
 
@@ -558,6 +565,10 @@ impl Game {
 
         let turn_ends = matches!(self.step, GameStep::WaitingForRoll);
 
+        if turn_ends {
+            self.end_turn();
+        }
+
         Ok(TurnResult {
             die1: 0,
             die2: 0,
@@ -566,7 +577,7 @@ impl Game {
             new_position: self.players[idx].position as u8,
             went_to_jail: false,
             turn_ends,
-            current_player_index: idx as u8,
+            current_player_index: self.current_player_idx as u8,
         })
     }
 

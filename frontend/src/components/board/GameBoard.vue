@@ -69,8 +69,9 @@ let notificationId = 0;
 
 // Sync local state with server data
 watchEffect(() => {
-  if (result.value?.getLobby) {
-    const lobby = result.value.getLobby
+  const res = result.value;
+  if (res?.getLobby) {
+    const lobby = res.getLobby
     
     // 1. Sync Game State
     if (lobby.gameState) {
@@ -117,7 +118,7 @@ watchEffect(() => {
         const oldP = gameState.players.find(p => p.name === np.name);
         if (oldP && oldP.money !== np.money) {
           const diff = np.money - oldP.money;
-          const type = diff > 0 ? 'plus' : 'minus';
+          const type: 'plus' | 'minus' = diff > 0 ? 'plus' : 'minus';
           const amountStr = (diff > 0 ? '+' : '-') + 'M' + Math.abs(diff);
           
           // Add notification
@@ -128,7 +129,7 @@ watchEffect(() => {
             type,
             x: 0, 
             y: 0,
-            playerName: np.name
+            playerName: np.name as string
           });
 
           // Remove after 2 seconds

@@ -128,7 +128,7 @@ impl Board {
             },
             Destination {
                 id: 13,
-                name: "Moscova".to_string(),
+                name: "Moscow".to_string(),
                 price: 200,
                 tourist_tax: 120,
                 color: Color::Orange,
@@ -136,7 +136,7 @@ impl Board {
             },
             Destination {
                 id: 12,
-                name: "Londra".to_string(),
+                name: "London".to_string(),
                 price: 200,
                 tourist_tax: 120,
                 color: Color::Orange,
@@ -144,7 +144,7 @@ impl Board {
             },
             Destination {
                 id: 11,
-                name: "Belgrad".to_string(),
+                name: "Belgrade".to_string(),
                 price: 260,
                 tourist_tax: 140,
                 color: Color::Red,
@@ -152,7 +152,7 @@ impl Board {
             },
             Destination {
                 id: 10,
-                name: "Atena".to_string(),
+                name: "Athens".to_string(),
                 price: 260,
                 tourist_tax: 140,
                 color: Color::Red,
@@ -184,7 +184,7 @@ impl Board {
             },
             Destination {
                 id: 6,
-                name: "Varsovia".to_string(),
+                name: "Warsaw".to_string(),
                 price: 300,
                 tourist_tax: 180,
                 color: Color::Yellow,
@@ -200,7 +200,7 @@ impl Board {
             },
             Destination {
                 id: 4,
-                name: "Lisabona".to_string(),
+                name: "Lisbon".to_string(),
                 price: 360,
                 tourist_tax: 200,
                 color: Color::Green,

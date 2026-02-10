@@ -290,7 +290,6 @@ defineExpose({ clearStamps, stamps: processedStamps });
   flex: none;
   background-color: #ede2da;
   position: relative;
-  overflow: hidden;
   border-radius: 4px;
 }
 

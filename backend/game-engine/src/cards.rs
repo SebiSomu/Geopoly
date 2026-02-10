@@ -41,13 +41,13 @@ impl ChanceDeck {
         let mut cards = vec![
             ChanceCard {
                 id: "chance_steal".to_string(),
-                description: "Ia ultima ștampilă a unui jucător, dar plătește-i valoarea integrală a acesteia.".to_string(),
+                description: "Steal another player's last stamp, but pay them its full value.".to_string(),
                 action: ChanceCardAction::StealStampAndPay,
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_hospital".to_string(),
-                description: "Plătește o taxă de spitalizare de M200.".to_string(),
+                description: "Pay a hospital tax of M200.".to_string(),
                 action: ChanceCardAction::PayHospital,
                 can_keep: false,
             },
@@ -65,61 +65,61 @@ impl ChanceDeck {
             },
             ChanceCard {
                 id: "chance_collect_each".to_string(),
-                description: "Toți jucătorii îți plătesc M40.".to_string(),
+                description: "Each player pays you M40.".to_string(),
                 action: ChanceCardAction::CollectFromEachPlayer(40),
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_reroll".to_string(),
-                description: "Aruncă din nou unul din zaruri și mută.".to_string(),
+                description: "Reroll one of the dice and move.".to_string(),
                 action: ChanceCardAction::RerollOneDie,
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_jail".to_string(),
-                description: "Mergi la Închisoare! Nu treci pe la START. Nu colectezi M200.".to_string(),
+                description: "Go to Jail! Go directly to Jail. Do not pass START. Do not collect M200.".to_string(),
                 action: ChanceCardAction::GoToJail,
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_start".to_string(),
-                description: "Avansează la START.".to_string(),
+                description: "Advance to START.".to_string(),
                 action: ChanceCardAction::AdvanceToStart,
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_dice_challenge_1".to_string(),
-                description: "Alege un alt jucător; dați amândoi cu zarul. Jucătorul care dă zarul cel mai mare îi plătește celuilalt M100.".to_string(),
+                description: "Choose another player; both roll a die. The player with the higher roll pays the other M100.".to_string(),
                 action: ChanceCardAction::DiceChallenge,
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_dice_challenge_2".to_string(),
-                description: "Alege un alt jucător; dați amândoi cu zarul. Jucătorul care dă zarul cel mai mare îi plătește celuilalt M100.".to_string(),
+                description: "Choose another player; both roll a die. The player with the higher roll pays the other M100.".to_string(),
                 action: ChanceCardAction::DiceChallenge,
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_collect_100".to_string(),
-                description: "Colectează M100 de la bancă.".to_string(),
+                description: "Collect M100 from the bank.".to_string(),
                 action: ChanceCardAction::CollectMoney(100),
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_move_5".to_string(),
-                description: "Înaintează cu 5 spații.".to_string(),
+                description: "Advance 5 spaces.".to_string(),
                 action: ChanceCardAction::MoveSteps(5),
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_swap_stamps".to_string(),
-                description: "Doi jucători trebuie să facă schimb între ultimele lor ștampile (de preferat, să nu fii tu acel jucător).".to_string(),
+                description: "Two players must swap their last stamps (preferably not you).".to_string(),
                 action: ChanceCardAction::SwapTwoPlayersStamps,
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_get_out_jail".to_string(),
-                description: "Ieșire gratis din închisoare!".to_string(),
+                description: "Get Out of Jail Free!".to_string(),
                 action: ChanceCardAction::GetOutOfJailFree,
                 can_keep: true, // POATE FI PĂSTRAT
             },
@@ -146,7 +146,7 @@ impl ChanceDeck {
             *self = ChanceDeck::new();
         }
 
-        self.cards.pop().expect("Deck-ul Here&Now este gol!")
+        self.cards.pop().expect("Chance deck is empty!")
     }
 
     pub fn discard(&mut self, card: ChanceCard) {
@@ -193,57 +193,57 @@ impl HereAndNowDeck {
         let mut cards = vec![
             HereAndNowCard {
                 id: "hn_intercept".to_string(),
-                description: "Atunci când un alt jucător este pe cale să cumpere un loc, cumpără-l tu.".to_string(),
+                description: "When another player is about to buy a slot, you buy it instead.".to_string(),
                 action: HereAndNowCardAction::InterceptPurchase,
             },
             HereAndNowCard {
                 id: "hn_say_no_1".to_string(),
-                description: "Spune nu! Contracărează acțiunile unui jucător împotriva ta.".to_string(),
+                description: "Just Say No! Counter another player's action against you.".to_string(),
                 action: HereAndNowCardAction::SayNo,
             },
             HereAndNowCard {
                 id: "hn_say_no_2".to_string(),
-                description: "Spune nu! Contracărează acțiunile unui jucător împotriva ta.".to_string(),
+                description: "Just Say No! Counter another player's action against you.".to_string(),
                 action: HereAndNowCardAction::SayNo,
             },
             HereAndNowCard {
                 id: "hn_say_no_3".to_string(),
-                description: "Spune nu! Contracărează acțiunile unui jucător împotriva ta.".to_string(),
+                description: "Just Say No! Counter another player's action against you.".to_string(),
                 action: HereAndNowCardAction::SayNo,
             },
             HereAndNowCard {
                 id: "hn_move_5".to_string(),
-                description: "Înaintează cu 5 spații.".to_string(),
+                description: "Advance 5 spaces.".to_string(),
                 action: HereAndNowCardAction::MoveSteps(5),
             },
             HereAndNowCard {
                 id: "hn_get_out_jail".to_string(),
-                description: "Ieșire gratis din închisoare.".to_string(),
+                description: "Get Out of Jail Free.".to_string(),
                 action: HereAndNowCardAction::GetOutOfJailFree,
             },
             HereAndNowCard {
                 id: "hn_swap_stamps_1".to_string(),
-                description: "Schimbă ultima ta ștampilă cu ultima ștampilă a altui jucător.".to_string(),
+                description: "Swap your last stamp with another player's last stamp.".to_string(),
                 action: HereAndNowCardAction::SwapStamps,
             },
             HereAndNowCard {
                 id: "hn_swap_stamps_2".to_string(),
-                description: "Schimbă ultima ta ștampilă cu ultima ștampilă a altui jucător.".to_string(),
+                description: "Swap your last stamp with another player's last stamp.".to_string(),
                 action: HereAndNowCardAction::SwapStamps,
             },
             HereAndNowCard {
                 id: "hn_take_all_last".to_string(),
-                description: "Ia ultima ștampilă de la TOȚI jucătorii și pune-le din nou pe tablă.".to_string(),
+                description: "Take the last stamp from ALL players and put them back on the board.".to_string(),
                 action: HereAndNowCardAction::TakeAllLastStamps,
             },
             HereAndNowCard {
                 id: "hn_discount".to_string(),
-                description: "Când aterizezi pe un loc care nu este deținut de nimeni, plătești doar M100 pentru acel loc.".to_string(),
+                description: "When you land on an unowned space, pay only M100 for that space.".to_string(),
                 action: HereAndNowCardAction::DiscountPurchase,
             },
             HereAndNowCard {
                 id: "hn_collect_richest".to_string(),
-                description: "Jucătorul cu cele mai multe ștampile îți plătește M200.".to_string(),
+                description: "The player with the most stamps pays you M200.".to_string(),
                 action: HereAndNowCardAction::CollectFromRichest,
             },
             HereAndNowCard {
@@ -253,12 +253,12 @@ impl HereAndNowDeck {
             },
             HereAndNowCard {
                 id: "hn_move_anywhere".to_string(),
-                description: "Mergi în orice loc de pe tablă.".to_string(),
+                description: "Go to any space on the board.".to_string(),
                 action: HereAndNowCardAction::MoveAnywhere,
             },
             HereAndNowCard {
                 id: "hn_collect_tax".to_string(),
-                description: "Colectează o taxă de turist în loc să plătești pentru ea.".to_string(),
+                description: "Collect a tourist tax instead of paying for it.".to_string(),
                 action: HereAndNowCardAction::CollectTax,
             },
         ];
@@ -284,7 +284,7 @@ impl HereAndNowDeck {
             *self = HereAndNowDeck::new();
         }
 
-        self.cards.pop().expect("Deck-ul Here&Now este gol!")
+        self.cards.pop().expect("Here & Now deck is empty!")
     }
 
     /// Distribuie 2 cărți inițiale fiecărui jucător
