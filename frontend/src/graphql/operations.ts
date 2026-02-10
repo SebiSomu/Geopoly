@@ -84,13 +84,31 @@ export const GET_LOBBY_QUERY = gql`
           destId
           destName
           price
+          buyerIdx
         }
-        pendingFirstClass
-        pendingAirportDecision
-        pendingAirportDestination
+        pendingFirstClass {
+          buyerIdx
+        }
+        pendingAirportDecision {
+          buyerIdx
+        }
+        pendingAirportDestination {
+          buyerIdx
+        }
         isForcedDeal
         isGameOver
         winnerName
+        targetSelection {
+          action
+          cardId
+          selectorIdx
+        }
+        diceDuel {
+          challengerIdx
+          targetIdx
+          challengerRoll
+          targetRoll
+        }
       }
       players {
         username
@@ -177,6 +195,22 @@ export const RESOLVE_AIRPORT_DESTINATION_MUTATION = gql`
 export const USE_CARD_MUTATION = gql`
   mutation UseCard($code: String!, $username: String!, $cardId: String!) {
     useCard(code: $code, username: $username, cardId: $cardId) {
+      code
+    }
+  }
+`
+
+export const RESOLVE_TARGET_SELECTION_MUTATION = gql`
+  mutation ResolveTargetSelection($code: String!, $username: String!, $targetUsername: String!) {
+    resolveTargetSelection(code: $code, username: $username, targetUsername: $targetUsername) {
+      code
+    }
+  }
+`
+
+export const ROLL_DUEL_DIE_MUTATION = gql`
+  mutation RollDuelDie($code: String!, $username: String!) {
+    rollDuelDie(code: $code, username: $username) {
       code
     }
   }

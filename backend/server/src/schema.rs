@@ -13,6 +13,27 @@ pub struct PendingPurchase {
     pub dest_id: u8,
     pub dest_name: String,
     pub price: u32,
+    pub buyer_idx: usize,
+}
+
+#[derive(SimpleObject)]
+pub struct PendingDecision {
+    pub buyer_idx: usize,
+}
+
+#[derive(SimpleObject)]
+pub struct TargetSelectionData {
+    pub action: String,
+    pub card_id: Option<String>,
+    pub selector_idx: usize,
+}
+
+#[derive(SimpleObject)]
+pub struct DiceDuelData {
+    pub challenger_idx: usize,
+    pub target_idx: usize,
+    pub challenger_roll: Option<u8>,
+    pub target_roll: Option<u8>,
 }
 
 #[derive(SimpleObject)]
@@ -22,12 +43,14 @@ pub struct GameStateDisplay {
     pub last_die2: u8,
     pub awaiting_action: bool,
     pub pending_purchase: Option<PendingPurchase>,
-    pub pending_first_class: bool,
-    pub pending_airport_decision: bool,
-    pub pending_airport_destination: bool,
+    pub pending_first_class: Option<PendingDecision>,
+    pub pending_airport_decision: Option<PendingDecision>,
+    pub pending_airport_destination: Option<PendingDecision>,
     pub is_forced_deal: bool,
     pub is_game_over: bool,
     pub winner_name: Option<String>,
+    pub target_selection: Option<TargetSelectionData>,
+    pub dice_duel: Option<DiceDuelData>,
 }
 
 #[ComplexObject]
@@ -38,7 +61,7 @@ impl Lobby {
             
             // Check for pending purchase
             let pending_purchase = match &game.step {
-                GameStep::WaitingForPurchaseDecision { dest_id, price } => {
+                GameStep::WaitingForPurchaseDecision { dest_id, price, buyer_idx } => {
                     // Find destination name from board
                     let name = game.board.find_destination_by_id(*dest_id)
                         .map(|d| d.name.clone())
@@ -47,14 +70,47 @@ impl Lobby {
                         dest_id: *dest_id,
                         dest_name: name,
                         price: *price,
+                        buyer_idx: *buyer_idx,
+                    })
+                },
+                _ => None,
+            };
+
+            let target_selection = match &game.step {
+                GameStep::WaitingForTargetSelection { action, card_id, selector_idx } => {
+                    Some(TargetSelectionData {
+                        action: action.clone(),
+                        card_id: card_id.clone(),
+                        selector_idx: *selector_idx,
+                    })
+                },
+                _ => None,
+            };
+
+            let dice_duel = match &game.step {
+                GameStep::WaitingForDiceDuel { challenger_idx, target_idx, challenger_roll, target_roll } => {
+                    Some(DiceDuelData {
+                        challenger_idx: *challenger_idx,
+                        target_idx: *target_idx,
+                        challenger_roll: *challenger_roll,
+                        target_roll: *target_roll,
                     })
                 },
                 _ => None,
             };
             
-            let pending_first_class = game.step == GameStep::WaitingForFirstClassDecision;
-            let pending_airport_decision = game.step == GameStep::WaitingForAirportDecision;
-            let pending_airport_destination = game.step == GameStep::WaitingForAirportDestination;
+            let pending_first_class = match &game.step {
+                GameStep::WaitingForFirstClassDecision { buyer_idx } => Some(PendingDecision { buyer_idx: *buyer_idx }),
+                _ => None,
+            };
+            let pending_airport_decision = match &game.step {
+                GameStep::WaitingForAirportDecision { buyer_idx } => Some(PendingDecision { buyer_idx: *buyer_idx }),
+                _ => None,
+            };
+            let pending_airport_destination = match &game.step {
+                GameStep::WaitingForAirportDestination { buyer_idx } => Some(PendingDecision { buyer_idx: *buyer_idx }),
+                _ => None,
+            };
             
             let mut winner_name = None;
             if game.game_over {
@@ -79,6 +135,8 @@ impl Lobby {
                 is_forced_deal: game.step == GameStep::WaitingForForcedDeal,
                 is_game_over: game.game_over,
                 winner_name,
+                target_selection,
+                dice_duel,
             })
         } else {
             None
@@ -377,7 +435,7 @@ impl MutationRoot {
                 return Err(Error::new("Invalid game state index"));
             }
             if game.players[current_idx].name != username {
-                return Err(Error::new("Not your turn"));
+                return Err(Error::new("Nu este randul tau!"));
             }
 
             // Execute Roll
@@ -426,7 +484,7 @@ impl MutationRoot {
             // Validate turn
             let current_idx = game.current_player_idx;
              if game.players[current_idx].name != username {
-                return Err(Error::new("Not your turn"));
+                return Err(Error::new("Nu este randul tau!"));
             }
 
             // Execute Action
@@ -462,10 +520,15 @@ impl MutationRoot {
         if let Some(mut lobby) = lobby_opt {
             let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
 
-            // Validate turn
-            let current_idx = game.current_player_idx;
-            if game.players[current_idx].name != username {
-                return Err(Error::new("Not your turn"));
+            // Validate turn - support intercepted purchase
+            let buyer_idx = if let GameStep::WaitingForPurchaseDecision { buyer_idx, .. } = &game.step {
+                *buyer_idx
+            } else {
+                game.current_player_idx
+            };
+
+            if game.players[buyer_idx].name != username {
+                return Err(Error::new("Nu este rândul tău să cumperi!"));
             }
 
             // Execute Action
@@ -501,10 +564,15 @@ impl MutationRoot {
         if let Some(mut lobby) = lobby_opt {
             let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
 
-            // Validate turn
-            let current_idx = game.current_player_idx;
-            if game.players[current_idx].name != username {
-                return Err(Error::new("Not your turn"));
+            // Validate turn - support intercepted first class
+            let buyer_idx = if let GameStep::WaitingForFirstClassDecision { buyer_idx, .. } = &game.step {
+                *buyer_idx
+            } else {
+                game.current_player_idx
+            };
+
+            if game.players[buyer_idx].name != username {
+                return Err(Error::new("Nu este rândul tău să cumperi First Class!"));
             }
 
             // Execute Action
@@ -540,10 +608,15 @@ impl MutationRoot {
         if let Some(mut lobby) = lobby_opt {
             let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
 
-            // Validate turn
-            let current_idx = game.current_player_idx;
-            if game.players[current_idx].name != username {
-                return Err(Error::new("Not your turn"));
+            // Validate turn - support out-of-turn movement
+            let buyer_idx = if let GameStep::WaitingForAirportDecision { buyer_idx } = game.step {
+                buyer_idx
+            } else {
+                game.current_player_idx
+            };
+
+            if game.players[buyer_idx].name != username {
+                return Err(Error::new("Nu este rândul tău să alegi zborul!"));
             }
 
             // Execute Action
@@ -579,10 +652,15 @@ impl MutationRoot {
         if let Some(mut lobby) = lobby_opt {
             let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
 
-            // Validate turn
-            let current_idx = game.current_player_idx;
-            if game.players[current_idx].name != username {
-                return Err(Error::new("Not your turn"));
+            // Validate turn - support out-of-turn movement
+            let buyer_idx = if let GameStep::WaitingForAirportDestination { buyer_idx } = game.step {
+                buyer_idx
+            } else {
+                game.current_player_idx
+            };
+
+            if game.players[buyer_idx].name != username {
+                return Err(Error::new("Nu este rândul tău să alegi destinația!"));
             }
 
             // Execute Action
@@ -630,6 +708,93 @@ impl MutationRoot {
                 game.use_chance_card(player_idx, card_id)
                     .map_err(|e| Error::new(e))?;
             }
+
+            // Sync State
+            sync_lobby_state(&mut lobby.players, game);
+
+            // Save
+            db.lobbies().update_one(
+                doc! { "_id": lobby.id },
+                doc! { 
+                    "$set": { 
+                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                    } 
+                },
+                None
+            ).await?;
+
+            Ok(lobby)
+        } else {
+            Err(Error::new("Lobby not found"))
+        }
+    }
+
+    /// Resolve target selection (Dice Duel or Stamp Swap)
+    async fn resolve_target_selection(&self, ctx: &Context<'_>, code: String, username: String, target_username: String) -> Result<Lobby> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+
+        if let Some(mut lobby) = lobby_opt {
+            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+
+            // Validate turn - check if the user is the selector
+            if let GameStep::WaitingForTargetSelection { selector_idx, .. } = &game.step {
+                if game.players[*selector_idx].name != username {
+                    return Err(Error::new("Nu este rândul tău să alegi jucătorul!"));
+                }
+            } else {
+                return Err(Error::new("Nu ești în etapa de a alege un jucător!"));
+            }
+
+            // Execute Action
+            game.resolve_target_selection(target_username)
+                .map_err(|e| Error::new(e))?;
+
+            // Sync State
+            sync_lobby_state(&mut lobby.players, game);
+
+            // Save
+            db.lobbies().update_one(
+                doc! { "_id": lobby.id },
+                doc! { 
+                    "$set": { 
+                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                    } 
+                },
+                None
+            ).await?;
+
+            Ok(lobby)
+        } else {
+            Err(Error::new("Lobby not found"))
+        }
+    }
+
+    /// Roll dice in a duel
+    async fn roll_duel_die(&self, ctx: &Context<'_>, code: String, username: String) -> Result<Lobby> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+
+        if let Some(mut lobby) = lobby_opt {
+            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+            
+            // Validate turn - check if the user is the one who should roll
+            let roller_idx = match &game.step {
+                GameStep::WaitingForDiceDuel { challenger_idx, target_idx, challenger_roll, .. } => {
+                    if challenger_roll.is_none() { *challenger_idx } else { *target_idx }
+                },
+                _ => return Err(Error::new("Nu ești într-un duel de zaruri!")),
+            };
+
+            if game.players[roller_idx].name != username {
+                return Err(Error::new("Nu este rândul tău să dai cu zarul!"));
+            }
+
+            // Execute Action
+            game.roll_duel_die()
+                .map_err(|e| Error::new(e))?;
 
             // Sync State
             sync_lobby_state(&mut lobby.players, game);

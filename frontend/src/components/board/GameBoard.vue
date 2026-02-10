@@ -1,13 +1,20 @@
 <script setup lang="ts">
 import { computed, reactive, watchEffect } from 'vue'
 import { useQuery, useMutation } from '@vue/apollo-composable'
-import { GET_LOBBY_QUERY, ROLL_DICE_MUTATION, RESOLVE_FORCED_DEAL_MUTATION, RESOLVE_PURCHASE_MUTATION, RESOLVE_FIRST_CLASS_MUTATION, RESOLVE_AIRPORT_DECISION_MUTATION, RESOLVE_AIRPORT_DESTINATION_MUTATION } from '../../graphql/operations'
+import { 
+  GET_LOBBY_QUERY, ROLL_DICE_MUTATION, RESOLVE_FORCED_DEAL_MUTATION, 
+  RESOLVE_PURCHASE_MUTATION, RESOLVE_FIRST_CLASS_MUTATION, 
+  RESOLVE_AIRPORT_DECISION_MUTATION, RESOLVE_AIRPORT_DESTINATION_MUTATION, 
+  RESOLVE_TARGET_SELECTION_MUTATION, ROLL_DUEL_DIE_MUTATION 
+} from '../../graphql/operations'
 import Passport from './Passport.vue'
 import Stamp from './Stamp.vue'
 import GameDice from './GameDice.vue'
 import CardStack from './CardStack.vue'
 import GameToken from './GameToken.vue'
 import CardHand from '../CardHand.vue'
+import PlayerSelectionModal from './PlayerSelectionModal.vue'
+import DiceDuel from './DiceDuel.vue'
 
 const props = defineProps<{
   code: string
@@ -28,6 +35,8 @@ const { mutate: resolvePurchaseMutation } = useMutation(RESOLVE_PURCHASE_MUTATIO
 const { mutate: resolveFirstClassMutation } = useMutation(RESOLVE_FIRST_CLASS_MUTATION);
 const { mutate: resolveAirportDecisionMutation } = useMutation(RESOLVE_AIRPORT_DECISION_MUTATION);
 const { mutate: resolveAirportDestinationMutation } = useMutation(RESOLVE_AIRPORT_DESTINATION_MUTATION);
+const { mutate: resolveTargetSelectionMutation } = useMutation(RESOLVE_TARGET_SELECTION_MUTATION);
+const { mutate: rollDuelDieMutation } = useMutation(ROLL_DUEL_DIE_MUTATION);
 
 // Game simulation state (local representation of server state)
 const gameState = reactive({
@@ -55,14 +64,16 @@ const gameState = reactive({
   forcedDealActive: false,
   isMoving: false,
   awaitingAction: false,
-  pendingPurchase: null as { destId: number; destName: string; price: number } | null,
-  pendingFirstClass: false,
-  pendingAirportDecision: false,
-  pendingAirportDestination: false,
+  pendingPurchase: null as { destId: number; destName: string; price: number; buyerIdx: number } | null,
+  pendingFirstClass: null as { buyerIdx: number } | null,
+  pendingAirportDecision: null as { buyerIdx: number } | null,
+  pendingAirportDestination: null as { buyerIdx: number } | null,
   isGameOver: false,
   winnerName: null as string | null,
   moneyNotifications: [] as Array<{ id: number; amount: string; type: 'plus' | 'minus'; x: number; y: number; playerName: string }>,
   pickingTarget: false,
+  targetSelection: null as { action: string; cardId: string | null; selectorIdx: number } | null,
+  diceDuel: null as { challengerIdx: number; targetIdx: number; challengerRoll: number | null; targetRoll: number | null } | null,
 })
 
 let notificationId = 0;
@@ -78,6 +89,14 @@ watchEffect(() => {
       gameState.isGameOver = lobby.gameState.isGameOver;
       gameState.winnerName = lobby.gameState.winnerName;
 
+      // Always sync decision states so modals appear even if slightly delayed by animations
+      gameState.pendingPurchase = lobby.gameState.pendingPurchase || null
+      gameState.pendingFirstClass = lobby.gameState.pendingFirstClass || null
+      gameState.pendingAirportDecision = lobby.gameState.pendingAirportDecision || null
+      gameState.pendingAirportDestination = lobby.gameState.pendingAirportDestination || null
+      gameState.targetSelection = lobby.gameState.targetSelection || null
+      gameState.diceDuel = lobby.gameState.diceDuel || null
+
       // Sync turn and dice, BUT only if we are not currently animating a roll ourselves
       if (!gameState.isRolling && !gameState.isMoving) {
         gameState.currentTurnIndex = lobby.gameState.currentTurnIndex
@@ -85,10 +104,6 @@ watchEffect(() => {
         if (lobby.gameState.lastDie2) gameState.diceValue2 = lobby.gameState.lastDie2
         gameState.awaitingAction = lobby.gameState.awaitingAction
         gameState.forcedDealActive = lobby.gameState.isForcedDeal
-        gameState.pendingPurchase = lobby.gameState.pendingPurchase || null
-        gameState.pendingFirstClass = lobby.gameState.pendingFirstClass || false
-        gameState.pendingAirportDecision = lobby.gameState.pendingAirportDecision || false
-        gameState.pendingAirportDestination = lobby.gameState.pendingAirportDestination || false
       }
     }
 
@@ -145,9 +160,30 @@ watchEffect(() => {
 })
 
 // Computed check if it's my turn
+// Computed check if it's my turn
 const isMyTurn = computed(() => {
   const currentPlayer = gameState.players[gameState.currentTurnIndex]
   return !!(currentPlayer && currentPlayer.name === username)
+})
+
+const canBuy = computed(() => {
+  if (!gameState.pendingPurchase) return false
+  return gameState.players[gameState.pendingPurchase.buyerIdx]?.name === username
+})
+
+const canBuyFirstClass = computed(() => {
+  if (!gameState.pendingFirstClass) return false
+  return gameState.players[gameState.pendingFirstClass.buyerIdx]?.name === username
+})
+
+const canFly = computed(() => {
+  if (!gameState.pendingAirportDecision) return false
+  return gameState.players[gameState.pendingAirportDecision.buyerIdx]?.name === username
+})
+
+const canPickDestination = computed(() => {
+  if (!gameState.pendingAirportDestination) return false
+  return gameState.players[gameState.pendingAirportDestination.buyerIdx]?.name === username
 })
 
 const myPlayerData = computed(() => {
@@ -388,7 +424,7 @@ const executeSwap = async (targetUsername: string) => {
     await resolveForcedDealMutation({
       code: props.code,
       username: username,
-      action: 'sneaky_swap',
+      action: 'SneakySwap',
       target: targetUsername
     })
     gameState.forcedDealActive = false
@@ -439,9 +475,36 @@ const handleFirstClassDecision = async (buy: boolean) => {
       username: username,
       buy: buy
     })
-    gameState.pendingFirstClass = false
+    gameState.pendingFirstClass = null
   } catch (e) {
     console.error("First Class decision failed:", e)
+  }
+}
+
+// Handle Target Selection (Dice Duel or Stamp Swap)
+const handleSelectTarget = async (targetUsername: string) => {
+  try {
+    await resolveTargetSelectionMutation({
+      code: props.code,
+      username: username,
+      targetUsername: targetUsername
+    })
+    gameState.targetSelection = null
+  } catch (e) {
+    console.error("Target selection failed:", e)
+  }
+}
+
+// Handle Dice Duel Roll
+const handleRollDuelDie = async () => {
+  try {
+    await rollDuelDieMutation({
+      code: props.code,
+      username: username
+    })
+    // UI will update via poll
+  } catch (e) {
+    console.error("Duel roll failed:", e)
   }
 }
 
@@ -453,7 +516,7 @@ const handleAirportDecision = async (buy: boolean) => {
       username: username,
       buyFlight: buy
     })
-    gameState.pendingAirportDecision = false
+    gameState.pendingAirportDecision = null
   } catch (e) {
     console.error("Airport decision failed:", e)
   }
@@ -461,15 +524,15 @@ const handleAirportDecision = async (buy: boolean) => {
 
 // Handle Airport Destination Selection
 const handleSelectDestination = async (position: number) => {
-  if (!gameState.pendingAirportDestination || !isMyTurn.value) return
-  
-  try {
-    await resolveAirportDestinationMutation({
-      code: props.code,
-      username: username,
-      targetPosition: position
-    })
-    gameState.pendingAirportDestination = false
+    if (!gameState.pendingAirportDestination || !canPickDestination.value) return
+    
+    try {
+      await resolveAirportDestinationMutation({
+        code: props.code,
+        username: username,
+        targetPosition: position
+      })
+      gameState.pendingAirportDestination = null
     
     // Optimistic local move
     const player = gameState.players[gameState.currentTurnIndex]
@@ -539,7 +602,7 @@ const handleSpaceClick = (type: 'bottom' | 'left' | 'top' | 'right' | 'corner', 
   const pos = getSpacePosition(type, index);
   const space = boardSpaces[pos];
   
-  if (space && gameState.pendingAirportDestination && isMyTurn.value) {
+  if (space && gameState.pendingAirportDestination && canPickDestination.value) {
     if (space.type === 'destination' || space.type === 'first_class') {
       handleSelectDestination(pos);
     }
@@ -548,7 +611,7 @@ const handleSpaceClick = (type: 'bottom' | 'left' | 'top' | 'right' | 'corner', 
 
 const isSpaceSelectable = (space: Space | undefined) => {
   if (!space) return false;
-  return gameState.pendingAirportDestination && isMyTurn.value && (space.type === 'destination' || space.type === 'first_class');
+  return gameState.pendingAirportDestination && canPickDestination.value && (space.type === 'destination' || space.type === 'first_class');
 }
 
 // Zone mapping: 
@@ -785,7 +848,11 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                   <h3>⚡ Forced Deal!</h3>
                   <p>Choose your action:</p>
                   <div class="modal-buttons vertical">
-                    <button class="modal-btn sneaky" @click="handleSneakySwap">
+                    <button 
+                      class="modal-btn sneaky" 
+                      @click="handleSneakySwap"
+                      :disabled="!myPlayerData || myPlayerData.properties.length === 0"
+                    >
                       🤝 Sneaky Swap
                     </button>
                     <button class="modal-btn move" @click="handleMoveN">
@@ -839,7 +906,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 
 
           <!-- Purchase Decision Modal -->
-          <div v-if="gameState.pendingPurchase && isMyTurn" class="purchase-modal">
+          <div v-if="gameState.pendingPurchase && canBuy" class="purchase-modal">
             <div class="modal-content">
               <h3>🏠 Buy Property?</h3>
               <p class="property-name">{{ gameState.pendingPurchase.destName }}</p>
@@ -856,7 +923,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
           </div>
 
           <!-- First Class Decision Modal -->
-          <div v-if="gameState.pendingFirstClass && isMyTurn" class="first-class-modal">
+          <div v-if="gameState.pendingFirstClass && canBuyFirstClass" class="first-class-modal">
             <div class="modal-content">
               <h3>✈️ First Class Stamp</h3>
               <p>Buy a First Class stamp for M100?</p>
@@ -872,7 +939,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
           </div>
 
           <!-- Airport Decision Modal -->
-          <div v-if="gameState.pendingAirportDecision && isMyTurn" class="modal-overlay">
+          <div v-if="gameState.pendingAirportDecision && canFly" class="modal-overlay">
             <div class="airport-modal">
               <div class="modal-content airport">
                 <div class="modal-icon mini">✈️</div>
@@ -1196,6 +1263,23 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
         :here-and-now-cards="myPlayerData.hereAndNowCards"
         :chance-cards="myPlayerData.chanceCards"
         :is-my-turn="isMyTurn"
+      />
+      <!-- New Reactive States: Target Selection and Dice Duel -->
+      <PlayerSelectionModal
+        v-if="gameState.targetSelection && gameState.targetSelection.selectorIdx === gameState.players.findIndex(p => p.name === username)"
+        :players="gameState.players"
+        :selectorIdx="gameState.targetSelection.selectorIdx"
+        :action="gameState.targetSelection.action"
+        :username="username"
+        @select="handleSelectTarget"
+      />
+
+      <DiceDuel
+        v-if="gameState.diceDuel"
+        :players="gameState.players"
+        :duelData="gameState.diceDuel"
+        :username="username"
+        @roll="handleRollDuelDie"
       />
   </div>
 </div>

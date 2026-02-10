@@ -315,4 +315,16 @@ impl Board {
         }
         None
     }
+
+    /// Găsește o destinație după nume
+    pub fn find_destination_by_name(&self, name: &str) -> Option<&Destination> {
+        for space in &self.spaces {
+            if let Space::Destination(dest) = space {
+                if dest.name == name {
+                    return Some(dest);
+                }
+            }
+        }
+        None
+    }
 }

@@ -137,6 +137,56 @@ impl Passport {
         v
     }
 
+    /// Caută o ștampilă după nume și returnează indexul ei în pașaport
+    /// Returnează poziția sub formă de (column: 0=left, 1=right, index_in_column)
+    pub fn find_stamp_index(&self, stamp_name: &str) -> Option<usize> {
+        // Căutăm în ambele coloane, returnăm indexul global (simplu)
+        for (i, stamp) in self.left_column.iter().enumerate() {
+            if stamp.name == stamp_name {
+                return Some(i); // index in left column
+            }
+        }
+        for (i, stamp) in self.right_column.iter().enumerate() {
+            if stamp.name == stamp_name {
+                return Some(self.left_column.len() + i); // offset by left column size
+            }
+        }
+        None
+    }
+
+    /// Șterge ștampila de la poziția specificată
+    /// Poziția este indexul global (0..left.len() = left column, rest = right column)
+    pub fn remove_stamp_at(&mut self, global_idx: usize) -> Option<Stamp> {
+        if global_idx < self.left_column.len() {
+            let stamp = self.left_column.remove(global_idx);
+            // Recalculăm înălțimea coloanei stângi
+            self.left_height_used = 0.0;
+            for (i, s) in self.left_column.iter().enumerate() {
+                let overlap = if i == 0 { 0.0 } else { STAMP_OVERLAP_CM };
+                self.left_height_used += s.diameter - overlap;
+            }
+            Some(stamp)
+        } else {
+            let right_idx = global_idx - self.left_column.len();
+            if right_idx < self.right_column.len() {
+                let stamp = self.right_column.remove(right_idx);
+                // Recalculăm înălțimea coloanei drepte
+                self.right_height_used = 0.0;
+                for (i, s) in self.right_column.iter().enumerate() {
+                    let overlap = if i == 0 { 0.0 } else { STAMP_OVERLAP_CM };
+                    self.right_height_used += s.diameter - overlap;
+                }
+                // Verificăm dacă am reintrat sub limită
+                if self.right_height_used <= RIGHT_COLUMN_HEIGHT {
+                    self.overflowed = false;
+                }
+                Some(stamp)
+            } else {
+                None
+            }
+        }
+    }
+
     /// Afișare detaliată a pașaportului
     pub fn display(&self) {
         println!("  📘 PAȘAPORT:");
