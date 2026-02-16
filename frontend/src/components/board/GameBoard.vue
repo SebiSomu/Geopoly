@@ -9,12 +9,11 @@ import {
 } from '../../graphql/operations'
 import Passport from './Passport.vue'
 import Stamp from './Stamp.vue'
-import GameDice from './GameDice.vue'
+import DicePanel from './DicePanel.vue'
 import CardStack from './CardStack.vue'
 import GameToken from './GameToken.vue'
 import CardHand from '../CardHand.vue'
 import PlayerSelectionModal from './PlayerSelectionModal.vue'
-import DiceDuel from './DiceDuel.vue'
 
 const props = defineProps<{
   code: string
@@ -832,7 +831,6 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
           </div>
           
           <!-- Deck Placeholders -->
-          <!-- Deck Placeholders -->
           <div class="card-deck chance-deck">
             <CardStack type="chance" />
           </div>
@@ -882,26 +880,23 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                </template>
             </div>
 
-            <!-- Normal Dice Panel -->
-            <div v-else class="dice-control-panel">
-              <GameDice 
-                :value1="gameState.diceValue1" 
-                :value2="gameState.diceValue2" 
-                :isRolling="gameState.isRolling"
-                :forcedDeal="gameState.diceValue1 === 1"
-              />
-              <button 
-                class="roll-button" 
-                @click="rollDice"
-                :disabled="!isMyTurn || gameState.isRolling || gameState.isMoving || gameState.forcedDealActive"
-              >
-                <span class="roll-icon">🎲</span>
-                <span class="roll-text">ROLL</span>
-              </button>
-              <div v-if="currentPlayer" class="turn-indicator">
-                {{ currentPlayer?.name }}'s Turn <span v-if="isMyTurn">(You)</span>
-              </div>
-            </div>
+            <!-- Dice Panel (Normal or Duel) -->
+            <DicePanel 
+              v-else
+              :diceValue1="gameState.diceValue1" 
+              :diceValue2="gameState.diceValue2" 
+              :isRolling="gameState.isRolling"
+              :isMoving="gameState.isMoving"
+              :forcedDealActive="gameState.forcedDealActive"
+              :isMyTurn="isMyTurn"
+              :currentPlayerName="currentPlayer?.name"
+              :players="gameState.players"
+              :username="username || ''"
+              :isDuel="!!gameState.diceDuel"
+              :duelData="gameState.diceDuel ?? undefined"
+              @roll="rollDice"
+              @rollDuel="handleRollDuelDie"
+            />
           </div>
 
 
@@ -1274,13 +1269,6 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
         @select="handleSelectTarget"
       />
 
-      <DiceDuel
-        v-if="gameState.diceDuel"
-        :players="gameState.players"
-        :duelData="gameState.diceDuel"
-        :username="username"
-        @roll="handleRollDuelDie"
-      />
   </div>
 </div>
 </template>

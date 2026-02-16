@@ -128,6 +128,12 @@ impl ChanceDeck {
         let mut rng = thread_rng();
         cards.shuffle(&mut rng);
 
+        // DEBUG: Force Dice Challenge to be on top (last in vector as draw use pop)
+        if let Some(pos) = cards.iter().position(|c| matches!(c.action, ChanceCardAction::DiceChallenge)) {
+            let card = cards.remove(pos);
+            cards.push(card);
+        }
+
         ChanceDeck {
             cards,
             discard_pile: Vec::new(),
