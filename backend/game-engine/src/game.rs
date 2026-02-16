@@ -29,6 +29,7 @@ pub enum GameStep {
         challenger_roll: Option<u8>, 
         target_roll: Option<u8> 
     },
+    WaitingForAuction { dest_id: u8, current_bid: u32, highest_bidder: Option<usize> },
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -137,6 +138,7 @@ impl Game {
                         GameStep::WaitingForAirportDestination { .. } |
                         GameStep::WaitingForTargetSelection { .. } |
                         GameStep::WaitingForDiceDuel { .. } |
+                        GameStep::WaitingForAuction { .. } |
                         GameStep::WaitingForForcedDeal => false,
                         _ => true,
                     };
@@ -186,6 +188,7 @@ impl Game {
                         GameStep::WaitingForAirportDestination { .. } |
                         GameStep::WaitingForTargetSelection { .. } |
                         GameStep::WaitingForDiceDuel { .. } |
+                        GameStep::WaitingForAuction { .. } |
                         GameStep::WaitingForForcedDeal => false,
                         _ => true,
                     };
@@ -257,7 +260,8 @@ impl Game {
                     GameStep::WaitingForAirportDecision { .. } |
                     GameStep::WaitingForAirportDestination { .. } |
                     GameStep::WaitingForTargetSelection { .. } |
-                    GameStep::WaitingForDiceDuel { .. }
+                    GameStep::WaitingForDiceDuel { .. } |
+                    GameStep::WaitingForAuction { .. }
                 );
                 
                 Ok(TurnResult {
@@ -309,6 +313,7 @@ impl Game {
                         GameStep::WaitingForAirportDestination { .. } |
                         GameStep::WaitingForTargetSelection { .. } |
                         GameStep::WaitingForDiceDuel { .. } |
+                        GameStep::WaitingForAuction { .. } |
                         GameStep::WaitingForForcedDeal => false,
                         _ => true,
                     };
@@ -366,6 +371,7 @@ impl Game {
                         GameStep::WaitingForAirportDestination { .. } |
                         GameStep::WaitingForTargetSelection { .. } |
                         GameStep::WaitingForDiceDuel { .. } |
+                        GameStep::WaitingForAuction { .. } |
                         GameStep::WaitingForForcedDeal => false,
                         _ => true,
                     };
@@ -434,7 +440,8 @@ impl Game {
                 GameStep::WaitingForAirportDecision { .. } |
                 GameStep::WaitingForAirportDestination { .. } |
                 GameStep::WaitingForTargetSelection { .. } |
-                GameStep::WaitingForDiceDuel { .. } => false,  // Așteaptă decizie
+                GameStep::WaitingForDiceDuel { .. } |
+                GameStep::WaitingForAuction { .. } => false,  // Așteaptă decizie
                 _ => true,  // Altfel, tura se încheie
             };
 
@@ -525,11 +532,27 @@ impl Game {
                     }
                 }
             } else {
-                println!("Jucătorul a refuzat să cumpere proprietatea.");
-            }
+            println!("Jucătorul a refuzat să cumpere proprietatea.");
+            // Start auction: bidding starts at M20
+            println!("{}", "🔨 AUCTION! Bidding starts at M20".bright_yellow());
+            self.step = GameStep::WaitingForAuction {
+                dest_id,
+                current_bid: 20,
+                highest_bidder: None,
+            };
+            return Ok(TurnResult {
+                die1: 0, die2: 0,
+                is_double: false,
+                is_forced_deal: false,
+                new_position: self.players[buyer_idx].position as u8,
+                went_to_jail: false,
+                turn_ends: false,
+                current_player_index: self.current_player_idx as u8,
+            });
+        }
 
-            self.step = GameStep::WaitingForRoll;
-            if buyer_idx == self.current_player_idx { self.end_turn(); }
+        self.step = GameStep::WaitingForRoll;
+        if buyer_idx == self.current_player_idx { self.end_turn(); }
 
             Ok(TurnResult {
                 die1: 0, die2: 0,
@@ -1841,20 +1864,82 @@ impl Game {
             }
     }
 
-    fn handle_auction(&mut self, dest: &Destination) {
-        println!("\n{}", "🔨 LICITAȚIE!".bright_yellow());
-        println!("Licitația pornește de la M20");
+    /// Place a bid during an auction. Any player can bid.
+    pub fn place_bid(&mut self, bidder_idx: usize, bid_amount: u32) -> Result<TurnResult, String> {
+        let (dest_id, current_bid, _highest_bidder) = match &self.step {
+            GameStep::WaitingForAuction { dest_id, current_bid, highest_bidder } => (*dest_id, *current_bid, *highest_bidder),
+            _ => return Err("No auction active".to_string()),
+        };
 
-        for i in 0..self.players.len() {
-            if self.players[i].money >= 20 {
-                println!("{} cumpără la licitație pentru M20!", self.players[i].name);
-                self.players[i].pay_money(20);
-                self.acquire_property(i, dest);
-                return;
-            }
+        // Validate bid increment: must be exactly +20, +50, or +100
+        let increment = bid_amount.checked_sub(current_bid).unwrap_or(0);
+        if increment != 20 && increment != 50 && increment != 100 {
+            return Err(format!("Invalid bid increment: {}. Must be +20, +50, or +100", increment));
         }
 
-        println!("{}", "Nimeni nu vrea destinația!".yellow());
+        // Validate player has enough money
+        if self.players[bidder_idx].money < bid_amount {
+            return Err("Not enough money to bid".to_string());
+        }
+
+        println!("{}", format!("🔨 {} bids M{}!", self.players[bidder_idx].name, bid_amount).bright_yellow());
+
+        self.step = GameStep::WaitingForAuction {
+            dest_id,
+            current_bid: bid_amount,
+            highest_bidder: Some(bidder_idx),
+        };
+
+        Ok(TurnResult {
+            die1: 0, die2: 0,
+            is_double: false,
+            is_forced_deal: false,
+            new_position: self.players[bidder_idx].position as u8,
+            went_to_jail: false,
+            turn_ends: false,
+            current_player_index: self.current_player_idx as u8,
+        })
+    }
+
+    /// Resolve an auction when the timer expires. Awards property to highest bidder.
+    pub fn resolve_auction(&mut self) -> Result<TurnResult, String> {
+        let (dest_id, current_bid, highest_bidder) = match &self.step {
+            GameStep::WaitingForAuction { dest_id, current_bid, highest_bidder } => (*dest_id, *current_bid, *highest_bidder),
+            _ => return Err("No auction active".to_string()),
+        };
+
+        if let Some(winner_idx) = highest_bidder {
+            // Winner pays and gets the property
+            if let Some(dest) = self.board.find_destination_by_id(dest_id) {
+                let dest = dest.clone();
+                if self.players[winner_idx].pay_money(current_bid) {
+                    self.history.push(GameAction::Payment {
+                        from: Some(winner_idx),
+                        to: None,
+                        amount: current_bid,
+                    });
+                    println!("{}", format!("🔨 {} wins the auction for M{}!", self.players[winner_idx].name, current_bid).bright_green());
+                    self.acquire_property(winner_idx, &dest);
+                } else {
+                    println!("{}", "Winner can't afford the bid!".red());
+                }
+            }
+        } else {
+            println!("{}", "🔨 No one bid. Property stays unowned.".yellow());
+        }
+
+        self.step = GameStep::WaitingForRoll;
+        self.end_turn();
+
+        Ok(TurnResult {
+            die1: 0, die2: 0,
+            is_double: false,
+            is_forced_deal: false,
+            new_position: self.players[self.current_player_idx].position as u8,
+            went_to_jail: false,
+            turn_ends: true,
+            current_player_index: self.current_player_idx as u8,
+        })
     }
 
     /// Helper pentru a adăuga o proprietate unui jucător, a verifica seturile și a verifica victoria

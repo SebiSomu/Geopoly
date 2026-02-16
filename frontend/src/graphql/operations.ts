@@ -109,6 +109,12 @@ export const GET_LOBBY_QUERY = gql`
           challengerRoll
           targetRoll
         }
+        pendingAuction {
+          destId
+          destName
+          currentBid
+          highestBidderIdx
+        }
       }
       players {
         username
@@ -211,6 +217,22 @@ export const RESOLVE_TARGET_SELECTION_MUTATION = gql`
 export const ROLL_DUEL_DIE_MUTATION = gql`
   mutation RollDuelDie($code: String!, $username: String!) {
     rollDuelDie(code: $code, username: $username) {
+      code
+    }
+  }
+`
+
+export const PLACE_BID_MUTATION = gql`
+  mutation PlaceBid($code: String!, $username: String!, $amount: Int!) {
+    placeBid(code: $code, username: $username, amount: $amount) {
+      code
+    }
+  }
+`
+
+export const RESOLVE_AUCTION_MUTATION = gql`
+  mutation ResolveAuction($code: String!) {
+    resolveAuction(code: $code) {
       code
     }
   }

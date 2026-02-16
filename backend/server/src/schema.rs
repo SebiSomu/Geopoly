@@ -37,6 +37,14 @@ pub struct DiceDuelData {
 }
 
 #[derive(SimpleObject)]
+pub struct AuctionData {
+    pub dest_id: u8,
+    pub dest_name: String,
+    pub current_bid: u32,
+    pub highest_bidder_idx: Option<usize>,
+}
+
+#[derive(SimpleObject)]
 pub struct GameStateDisplay {
     pub current_turn_index: u8,
     pub last_die1: u8,
@@ -51,6 +59,7 @@ pub struct GameStateDisplay {
     pub winner_name: Option<String>,
     pub target_selection: Option<TargetSelectionData>,
     pub dice_duel: Option<DiceDuelData>,
+    pub pending_auction: Option<AuctionData>,
 }
 
 #[ComplexObject]
@@ -120,6 +129,21 @@ impl Lobby {
                     .map(|p| p.name.clone());
             }
 
+            let pending_auction = match &game.step {
+                GameStep::WaitingForAuction { dest_id, current_bid, highest_bidder } => {
+                    let name = game.board.find_destination_by_id(*dest_id)
+                        .map(|d| d.name.clone())
+                        .unwrap_or_else(|| "Unknown".to_string());
+                    Some(AuctionData {
+                        dest_id: *dest_id,
+                        dest_name: name,
+                        current_bid: *current_bid,
+                        highest_bidder_idx: *highest_bidder,
+                    })
+                },
+                _ => None,
+            };
+
             Some(GameStateDisplay {
                 current_turn_index: game.current_player_idx as u8,
                 last_die1: d1,
@@ -137,6 +161,7 @@ impl Lobby {
                 winner_name,
                 target_selection,
                 dice_duel,
+                pending_auction,
             })
         } else {
             None
@@ -794,6 +819,76 @@ impl MutationRoot {
 
             // Execute Action
             game.roll_duel_die()
+                .map_err(|e| Error::new(e))?;
+
+            // Sync State
+            sync_lobby_state(&mut lobby.players, game);
+
+            // Save
+            db.lobbies().update_one(
+                doc! { "_id": lobby.id },
+                doc! { 
+                    "$set": { 
+                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                    } 
+                },
+                None
+            ).await?;
+
+            Ok(lobby)
+        } else {
+            Err(Error::new("Lobby not found"))
+        }
+    }
+
+    /// Place a bid during an auction (any player can bid)
+    async fn place_bid(&self, ctx: &Context<'_>, code: String, username: String, amount: u32) -> Result<Lobby> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+
+        if let Some(mut lobby) = lobby_opt {
+            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+
+            // Find player index - any player can bid, not just current turn player
+            let bidder_idx = game.players.iter().position(|p| p.name == username)
+                .ok_or_else(|| Error::new("Player not found in game"))?;
+
+            // Execute bid
+            game.place_bid(bidder_idx, amount)
+                .map_err(|e| Error::new(e))?;
+
+            // Sync State
+            sync_lobby_state(&mut lobby.players, game);
+
+            // Save
+            db.lobbies().update_one(
+                doc! { "_id": lobby.id },
+                doc! { 
+                    "$set": { 
+                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                    } 
+                },
+                None
+            ).await?;
+
+            Ok(lobby)
+        } else {
+            Err(Error::new("Lobby not found"))
+        }
+    }
+
+    /// Resolve auction when timer expires
+    async fn resolve_auction(&self, ctx: &Context<'_>, code: String) -> Result<Lobby> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+
+        if let Some(mut lobby) = lobby_opt {
+            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+
+            // Execute auction resolution
+            game.resolve_auction()
                 .map_err(|e| Error::new(e))?;
 
             // Sync State

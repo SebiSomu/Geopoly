@@ -5,7 +5,8 @@ import {
   GET_LOBBY_QUERY, ROLL_DICE_MUTATION, RESOLVE_FORCED_DEAL_MUTATION, 
   RESOLVE_PURCHASE_MUTATION, RESOLVE_FIRST_CLASS_MUTATION, 
   RESOLVE_AIRPORT_DECISION_MUTATION, RESOLVE_AIRPORT_DESTINATION_MUTATION, 
-  RESOLVE_TARGET_SELECTION_MUTATION, ROLL_DUEL_DIE_MUTATION 
+  RESOLVE_TARGET_SELECTION_MUTATION, ROLL_DUEL_DIE_MUTATION,
+  PLACE_BID_MUTATION, RESOLVE_AUCTION_MUTATION
 } from '../../graphql/operations'
 import Passport from './Passport.vue'
 import Stamp from './Stamp.vue'
@@ -36,6 +37,8 @@ const { mutate: resolveAirportDecisionMutation } = useMutation(RESOLVE_AIRPORT_D
 const { mutate: resolveAirportDestinationMutation } = useMutation(RESOLVE_AIRPORT_DESTINATION_MUTATION);
 const { mutate: resolveTargetSelectionMutation } = useMutation(RESOLVE_TARGET_SELECTION_MUTATION);
 const { mutate: rollDuelDieMutation } = useMutation(ROLL_DUEL_DIE_MUTATION);
+const { mutate: placeBidMutation } = useMutation(PLACE_BID_MUTATION);
+const { mutate: resolveAuctionMutation } = useMutation(RESOLVE_AUCTION_MUTATION);
 
 // Game simulation state (local representation of server state)
 const gameState = reactive({
@@ -73,7 +76,39 @@ const gameState = reactive({
   pickingTarget: false,
   targetSelection: null as { action: string; cardId: string | null; selectorIdx: number } | null,
   diceDuel: null as { challengerIdx: number; targetIdx: number; challengerRoll: number | null; targetRoll: number | null } | null,
+  pendingAuction: null as { destId: number; destName: string; currentBid: number; highestBidderIdx: number | null } | null,
+  auctionTimer: 0,
 })
+
+let auctionInterval: any = null;
+
+// Watch for auction state changes to manage timer
+import { watch } from 'vue'
+watch(() => gameState.pendingAuction, (newVal, oldVal) => {
+  // If no auction, clear timer
+  if (!newVal) {
+    if (auctionInterval) {
+      clearInterval(auctionInterval);
+      auctionInterval = null;
+    }
+    gameState.auctionTimer = 0;
+    return;
+  }
+
+  // If new auction OR bid changed (currentBid changed), reset timer
+  if (!oldVal || newVal.currentBid !== oldVal.currentBid) {
+    if (auctionInterval) clearInterval(auctionInterval);
+    gameState.auctionTimer = 5; // 5 seconds
+    
+    auctionInterval = setInterval(() => {
+      gameState.auctionTimer--;
+      if (gameState.auctionTimer <= 0) {
+        clearInterval(auctionInterval);
+        handleResolveAuction();
+      }
+    }, 1000);
+  }
+}, { deep: true });
 
 let notificationId = 0;
 
@@ -95,6 +130,10 @@ watchEffect(() => {
       gameState.pendingAirportDestination = lobby.gameState.pendingAirportDestination || null
       gameState.targetSelection = lobby.gameState.targetSelection || null
       gameState.diceDuel = lobby.gameState.diceDuel || null
+      // Check for auction
+      // If we already have a pendingAuction and the ID/bid matches, update it (to keep the local object ref if possible, or just replace)
+      // Actually, standard replacing is fine, the watch will handle diffing deeply or property-wise
+      gameState.pendingAuction = lobby.gameState.pendingAuction || null
 
       // Sync turn and dice, BUT only if we are not currently animating a roll ourselves
       if (!gameState.isRolling && !gameState.isMoving) {
@@ -494,6 +533,33 @@ const handleSelectTarget = async (targetUsername: string) => {
   }
 }
 
+// Handle Place Bid
+const handlePlaceBid = async (amount: number) => {
+  try {
+    // Optimistic: update locally to feel instant? 
+    // No, wait for server to ensure validation (money etc)
+    await placeBidMutation({
+      code: props.code,
+      username: username,
+      amount: amount
+    })
+  } catch (e) {
+    console.error("Bid failed:", e)
+  }
+}
+
+// Resolve Auction (Timer expired)
+const handleResolveAuction = async () => {
+  if (!gameState.pendingAuction) return;
+  try {
+    await resolveAuctionMutation({
+      code: props.code
+    })
+  } catch (e) {
+    console.error("Resolve auction failed:", e)
+  }
+}
+
 // Handle Dice Duel Roll
 const handleRollDuelDie = async () => {
   try {
@@ -545,6 +611,13 @@ const handleSelectDestination = async (position: number) => {
 
 // Get current player
 const currentPlayer = computed(() => gameState.players[gameState.currentTurnIndex])
+
+// Get Auction Top Bidder Name safely
+const auctionTopBidder = computed(() => {
+  if (!gameState.pendingAuction || gameState.pendingAuction.highestBidderIdx === null || gameState.pendingAuction.highestBidderIdx === undefined) return 'No bids yet'
+  const player = gameState.players[gameState.pendingAuction.highestBidderIdx]
+  return player ? player.name : 'Unknown'
+})
 
 // Separate spaces by position on the board
 const bottomRow = computed(() => boardSpaces.slice(1, 10).reverse())
@@ -912,6 +985,61 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                 </button>
                 <button class="modal-btn skip" @click="handlePurchaseDecision(false)">
                   ❌ Skip
+                </button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Auction Modal -->
+          <div v-if="gameState.pendingAuction" class="auction-modal">
+            <div class="modal-content auction">
+              <div class="auction-header">
+                <span class="auction-icon">🔨</span>
+                <h3>AUCTION!</h3>
+              </div>
+              <p class="property-name">{{ gameState.pendingAuction.destName }}</p>
+              
+              <div class="auction-stats">
+                <div class="stat-box">
+                  <span class="stat-label">Current Bid</span>
+                  <span class="stat-value bid-amount">M{{ gameState.pendingAuction.currentBid }}</span>
+                </div>
+                <div class="stat-box">
+                  <span class="stat-label">Top Bidder</span>
+                  <span class="stat-value bidder-name">
+                    {{ auctionTopBidder }}
+                  </span>
+                </div>
+              </div>
+
+              <div class="auction-timer-container">
+                <div class="auction-timer-bar">
+                  <div class="timer-fill" :style="{ width: (gameState.auctionTimer / 5 * 100) + '%' }"></div>
+                </div>
+                <span class="timer-text">{{ gameState.auctionTimer }}s</span>
+              </div>
+
+              <div class="modal-buttons auction-buttons">
+                <button 
+                  class="modal-btn bid" 
+                  @click="gameState.pendingAuction && handlePlaceBid(gameState.pendingAuction.currentBid + 20)"
+                  :disabled="!myPlayerData || !gameState.pendingAuction || myPlayerData.money < gameState.pendingAuction.currentBid + 20"
+                >
+                  +20
+                </button>
+                <button 
+                  class="modal-btn bid" 
+                  @click="gameState.pendingAuction && handlePlaceBid(gameState.pendingAuction.currentBid + 50)"
+                  :disabled="!myPlayerData || !gameState.pendingAuction || myPlayerData.money < gameState.pendingAuction.currentBid + 50"
+                >
+                  +50
+                </button>
+                <button 
+                  class="modal-btn bid" 
+                  @click="gameState.pendingAuction && handlePlaceBid(gameState.pendingAuction.currentBid + 100)"
+                  :disabled="!myPlayerData || !gameState.pendingAuction || myPlayerData.money < gameState.pendingAuction.currentBid + 100"
+                >
+                  +100
                 </button>
               </div>
             </div>
@@ -2616,4 +2744,298 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
   0%, 100% { transform: translateY(0); }
   50% { transform: translateY(-10px); }
 }
+/* Auction Modal Styles */
+.auction-modal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2000; /* Higher than purchase modal */
+  animation: bounceIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.modal-content.auction {
+  background: linear-gradient(145deg, #1a1c20 0%, #2d3436 100%);
+  border: 3px solid #ff9f43;
+  color: white;
+  min-width: 320px;
+  padding: 24px;
+}
+
+.auction-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.auction-icon {
+  font-size: 28px;
+  animation: swing 1s infinite ease-in-out;
+}
+
+.modal-content.auction h3 {
+  color: #ff9f43;
+  font-size: 28px;
+  margin: 0;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.modal-content.auction .property-name {
+  color: white;
+  margin-bottom: 20px;
+  font-size: 22px;
+}
+
+.auction-stats {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  background: rgba(0,0,0,0.3);
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.stat-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #a4b0be;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-family: 'Oswald', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.bid-amount { color: #2ed573; }
+.bidder-name { color: #70a1ff; }
+
+.auction-timer-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.auction-timer-bar {
+  flex: 1;
+  height: 12px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.timer-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff4757, #ff6b81);
+  transition: width 1s linear;
+}
+
+.timer-text {
+  font-family: 'Oswald', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: #ff4757;
+  width: 30px;
+  text-align: right;
+}
+
+.auction-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.modal-btn.bid {
+  background: linear-gradient(135deg, #3742fa 0%, #5352ed 100%);
+  color: white;
+  min-width: 70px;
+  font-size: 18px;
+}
+
+.modal-btn.bid:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 15px rgba(55, 66, 250, 0.4);
+}
+
+.modal-btn.bid:disabled {
+  background: #57606f;
+  color: #a4b0be;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+@keyframes swing {
+  0% { transform: rotate(0deg); }
+  20% { transform: rotate(15deg); }
+  40% { transform: rotate(-10deg); }
+  60% { transform: rotate(5deg); }
+  80% { transform: rotate(-5deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes bounceIn {
+  0% { transform: translate(-50%, -50%) scale(0.3); opacity: 0; }
+  50% { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
+  70% { transform: translate(-50%, -50%) scale(0.9); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
 </style>
+/* Auction Modal Styles */
+.auction-modal {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  z-index: 2000; /* Higher than purchase modal */
+  animation: bounceIn 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+}
+
+.modal-content.auction {
+  background: linear-gradient(145deg, #1a1c20 0%, #2d3436 100%);
+  border: 3px solid #ff9f43;
+  color: white;
+  min-width: 320px;
+  padding: 24px;
+}
+
+.auction-header {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
+.auction-icon {
+  font-size: 28px;
+  animation: swing 1s infinite ease-in-out;
+}
+
+.modal-content.auction h3 {
+  color: #ff9f43;
+  font-size: 28px;
+  margin: 0;
+  text-shadow: 0 2px 4px rgba(0,0,0,0.5);
+}
+
+.modal-content.auction .property-name {
+  color: white;
+  margin-bottom: 20px;
+  font-size: 22px;
+}
+
+.auction-stats {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 20px;
+  background: rgba(0,0,0,0.3);
+  padding: 12px;
+  border-radius: 12px;
+}
+
+.stat-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.stat-label {
+  font-size: 12px;
+  color: #a4b0be;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+.stat-value {
+  font-family: 'Oswald', sans-serif;
+  font-size: 18px;
+  font-weight: 600;
+}
+
+.bid-amount { color: #2ed573; }
+.bidder-name { color: #70a1ff; }
+
+.auction-timer-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.auction-timer-bar {
+  flex: 1;
+  height: 12px;
+  background: rgba(255,255,255,0.1);
+  border-radius: 6px;
+  overflow: hidden;
+}
+
+.timer-fill {
+  height: 100%;
+  background: linear-gradient(90deg, #ff4757, #ff6b81);
+  transition: width 1s linear;
+}
+
+.timer-text {
+  font-family: 'Oswald', sans-serif;
+  font-size: 20px;
+  font-weight: 700;
+  color: #ff4757;
+  width: 30px;
+  text-align: right;
+}
+
+.auction-buttons {
+  display: flex;
+  justify-content: center;
+  gap: 12px;
+}
+
+.modal-btn.bid {
+  background: linear-gradient(135deg, #3742fa 0%, #5352ed 100%);
+  color: white;
+  min-width: 70px;
+  font-size: 18px;
+}
+
+.modal-btn.bid:hover:not(:disabled) {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 15px rgba(55, 66, 250, 0.4);
+}
+
+.modal-btn.bid:disabled {
+  background: #57606f;
+  color: #a4b0be;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
+}
+
+@keyframes swing {
+  0% { transform: rotate(0deg); }
+  20% { transform: rotate(15deg); }
+  40% { transform: rotate(-10deg); }
+  60% { transform: rotate(5deg); }
+  80% { transform: rotate(-5deg); }
+  100% { transform: rotate(0deg); }
+}
+
+@keyframes bounceIn {
+  0% { transform: translate(-50%, -50%) scale(0.3); opacity: 0; }
+  50% { transform: translate(-50%, -50%) scale(1.05); opacity: 1; }
+  70% { transform: translate(-50%, -50%) scale(0.9); }
+  100% { transform: translate(-50%, -50%) scale(1); }
+}
