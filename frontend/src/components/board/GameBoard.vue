@@ -16,6 +16,7 @@ import CardStack from './CardStack.vue'
 import GameToken from './GameToken.vue'
 import CardHand from '../CardHand.vue'
 import PlayerSelectionModal from './PlayerSelectionModal.vue'
+import WinnerAnnouncement from './WinnerAnnouncement.vue'
 
 const props = defineProps<{
   code: string
@@ -229,6 +230,10 @@ const canPickDestination = computed(() => {
 
 const myPlayerData = computed(() => {
   return gameState.players.find(p => p.name === username);
+})
+
+const myPlayerIdx = computed(() => {
+  return gameState.players.findIndex(p => p.name === username);
 })
 
 
@@ -916,70 +921,83 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 
           <!-- Dice in the center with Roll Button -->
           <div class="dice-container-center">
-            <!-- Forced Deal Panel (Compact) -->
-            <div v-if="gameState.forcedDealActive && isMyTurn" class="dice-control-panel forced-deal-panel">
-               <template v-if="!gameState.pickingTarget">
-                  <h3>⚡ Forced Deal!</h3>
-                  <p>Choose your action:</p>
-                  <div class="modal-buttons vertical">
-                    <button 
-                      class="modal-btn sneaky" 
-                      @click="handleSneakySwap"
-                      :disabled="!myPlayerData || myPlayerData.properties.length === 0"
-                    >
-                      🤝 Sneaky Swap
-                    </button>
-                    <button class="modal-btn move" @click="handleMoveN">
-                      🚀 Move {{ gameState.diceValue2 }} Spaces
-                    </button>
-                  </div>
-               </template>
-               <template v-else>
-                  <h3>🤝 Who to swap?</h3>
-                  <div class="target-selection-grid">
-                    <button 
-                      v-for="p in gameState.players.filter(p => p.name !== username)" 
-                      :key="p.name"
-                      class="target-btn"
-                      @click="executeSwap(p.name)"
-                      :disabled="p.properties.length === 0"
-                    >
-                      <div class="target-token">
-                        <GameToken :type="p.character" />
-                      </div>
-                      <span class="target-name">{{ p.name }}</span>
-                    </button>
-                  </div>
-                  <button class="modal-btn skip mini" @click="gameState.pickingTarget = false">
-                    ⬅ Back
-                  </button>
-               </template>
-            </div>
+            <!-- Game Over Choice -->
+            <template v-if="gameState.isGameOver">
+              <WinnerAnnouncement 
+                :winnerName="gameState.winnerName"
+                :character="gameState.players.find(p => p.name === gameState.winnerName)?.character || 'cat'"
+                :properties="gameState.players.find(p => p.name === gameState.winnerName)?.properties || []"
+                @backToLobby="$router.push('/lobby')"
+              />
+            </template>
 
-            <!-- Dice Panel (Normal or Duel) -->
-            <DicePanel 
-              v-else
-              :diceValue1="gameState.diceValue1" 
-              :diceValue2="gameState.diceValue2" 
-              :isRolling="gameState.isRolling"
-              :isMoving="gameState.isMoving"
-              :forcedDealActive="gameState.forcedDealActive"
-              :isMyTurn="isMyTurn"
-              :currentPlayerName="currentPlayer?.name"
-              :players="gameState.players"
-              :username="username || ''"
-              :isDuel="!!gameState.diceDuel"
-              :duelData="gameState.diceDuel ?? undefined"
-              @roll="rollDice"
-              @rollDuel="handleRollDuelDie"
-            />
+            <!-- Active Game UI -->
+            <template v-else>
+              <!-- Forced Deal Panel (Compact) -->
+              <div v-if="gameState.forcedDealActive && isMyTurn" class="dice-control-panel forced-deal-panel">
+                 <template v-if="!gameState.pickingTarget">
+                    <h3>⚡ Forced Deal!</h3>
+                    <p>Choose your action:</p>
+                    <div class="modal-buttons vertical">
+                      <button 
+                        class="modal-btn sneaky" 
+                        @click="handleSneakySwap"
+                        :disabled="!myPlayerData || myPlayerData.properties.length === 0"
+                      >
+                        🤝 SNEAKY SWAP
+                      </button>
+                      <button class="modal-btn move" @click="handleMoveN">
+                        🚀 MOVE {{ gameState.diceValue2 }} SPACES
+                      </button>
+                    </div>
+                 </template>
+                 <template v-else>
+                    <h3>🤝 Who to swap?</h3>
+                    <div class="target-selection-grid">
+                      <button 
+                        v-for="p in gameState.players.filter(p => p.name !== username)" 
+                        :key="p.name"
+                        class="target-btn"
+                        @click="executeSwap(p.name)"
+                        :disabled="p.properties.length === 0"
+                      >
+                        <div class="target-token">
+                          <GameToken :type="p.character" />
+                        </div>
+                        <span class="target-name">{{ p.name }}</span>
+                      </button>
+                    </div>
+                    <button class="modal-btn skip mini" @click="gameState.pickingTarget = false">
+                      ⬅ Back
+                    </button>
+                 </template>
+              </div>
 
-            <!-- Activity Log -->
-            <ActivityLog
-              class="activity-log-pos"
-              :entries="gameState.activityLog"
-              :players="gameState.players.map(p => ({ name: p.name, character: p.character }))"
-            />
+              <!-- Dice Panel (Normal or Duel) -->
+              <DicePanel 
+                v-else
+                :diceValue1="gameState.diceValue1" 
+                :diceValue2="gameState.diceValue2" 
+                :isRolling="gameState.isRolling"
+                :isMoving="gameState.isMoving"
+                :forcedDealActive="gameState.forcedDealActive"
+                :isMyTurn="isMyTurn"
+                :currentPlayerName="currentPlayer?.name"
+                :players="gameState.players"
+                :username="username || ''"
+                :isDuel="!!gameState.diceDuel"
+                :duelData="gameState.diceDuel ?? undefined"
+                @roll="rollDice"
+                @rollDuel="handleRollDuelDie"
+              />
+
+              <!-- Activity Log -->
+              <ActivityLog
+                class="activity-log-pos"
+                :entries="gameState.activityLog"
+                :players="gameState.players.map(p => ({ name: p.name, character: p.character }))"
+              />
+            </template>
           </div>
 
 
@@ -1001,7 +1019,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
           </div>
 
           <!-- Auction Modal -->
-          <div v-if="gameState.pendingAuction" class="auction-modal">
+          <div v-if="gameState.pendingAuction && !gameState.isGameOver" class="auction-modal">
             <div class="modal-content auction">
               <div class="auction-header">
                 <span class="auction-icon">🔨</span>
@@ -1033,21 +1051,21 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                 <button 
                   class="modal-btn bid" 
                   @click="gameState.pendingAuction && handlePlaceBid(gameState.pendingAuction.currentBid + 20)"
-                  :disabled="!myPlayerData || !gameState.pendingAuction || myPlayerData.money < gameState.pendingAuction.currentBid + 20"
+                  :disabled="!myPlayerData || !gameState.pendingAuction || myPlayerData.money < gameState.pendingAuction.currentBid + 20 || gameState.pendingAuction.highestBidderIdx === myPlayerIdx"
                 >
                   +20
                 </button>
                 <button 
                   class="modal-btn bid" 
                   @click="gameState.pendingAuction && handlePlaceBid(gameState.pendingAuction.currentBid + 50)"
-                  :disabled="!myPlayerData || !gameState.pendingAuction || myPlayerData.money < gameState.pendingAuction.currentBid + 50"
+                  :disabled="!myPlayerData || !gameState.pendingAuction || myPlayerData.money < gameState.pendingAuction.currentBid + 50 || gameState.pendingAuction.highestBidderIdx === myPlayerIdx"
                 >
                   +50
                 </button>
                 <button 
                   class="modal-btn bid" 
                   @click="gameState.pendingAuction && handlePlaceBid(gameState.pendingAuction.currentBid + 100)"
-                  :disabled="!myPlayerData || !gameState.pendingAuction || myPlayerData.money < gameState.pendingAuction.currentBid + 100"
+                  :disabled="!myPlayerData || !gameState.pendingAuction || myPlayerData.money < gameState.pendingAuction.currentBid + 100 || gameState.pendingAuction.highestBidderIdx === myPlayerIdx"
                 >
                   +100
                 </button>
@@ -1056,7 +1074,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
           </div>
 
           <!-- First Class Decision Modal -->
-          <div v-if="gameState.pendingFirstClass && canBuyFirstClass" class="first-class-modal">
+          <div v-if="gameState.pendingFirstClass && canBuyFirstClass && !gameState.isGameOver" class="first-class-modal">
             <div class="modal-content">
               <h3>✈️ First Class Stamp</h3>
               <p>Buy a First Class stamp for M100?</p>
@@ -1072,7 +1090,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
           </div>
 
           <!-- Airport Decision Modal -->
-          <div v-if="gameState.pendingAirportDecision && canFly" class="modal-overlay">
+          <div v-if="gameState.pendingAirportDecision && canFly && !gameState.isGameOver" class="modal-overlay">
             <div class="airport-modal">
               <div class="modal-content airport">
                 <div class="modal-icon mini">✈️</div>
@@ -1090,21 +1108,18 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
             </div>
           </div>
 
-          <!-- Victory Modal -->
-          <div v-if="gameState.isGameOver" class="victory-modal">
-            <div class="modal-content victory">
-              <div class="confetti-placeholder">🎉✨🎊</div>
-              <h3>🏆 WE HAVE A WINNER!</h3>
-              <div class="winner-info">
-                <div class="winner-token">
-                  <GameToken :type="gameState.players.find(p => p.name === gameState.winnerName)?.character || 'cat'" />
-                </div>
-                <p class="winner-name">{{ gameState.winnerName }}</p>
-              </div>
-              <p>Has completed their passport and conquered the world!</p>
+          <!-- Purchase Decision Modal -->
+          <div v-if="gameState.pendingPurchase && canBuy && !gameState.isGameOver" class="purchase-modal" style="z-index: 1000;">
+            <div class="modal-content">
+              <h3>🏠 Buy Property?</h3>
+              <p class="property-name">{{ gameState.pendingPurchase.destName }}</p>
+              <p class="property-price">Price: M{{ gameState.pendingPurchase.price }}</p>
               <div class="modal-buttons">
-                <button class="modal-btn back-to-lobby" @click="$router.push('/lobby')">
-                  Return to Lobby
+                <button class="modal-btn buy" @click="handlePurchaseDecision(true)">
+                  ✅ Buy
+                </button>
+                <button class="modal-btn skip" @click="handlePurchaseDecision(false)">
+                  ❌ Skip
                 </button>
               </div>
             </div>
@@ -2368,26 +2383,49 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 }
 
 .forced-deal-panel {
-  padding: 10px 14px;
-  gap: 8px;
-  max-width: 220px;
+  padding: 14px;
+  gap: 12px;
+  max-width: 180px; /* Matching DicePanel aesthetic width */
+  min-width: 160px;
 }
 
 .forced-deal-panel h3 {
-  font-size: 14px;
+  font-size: 1.1rem;
+  font-weight: 900;
   margin: 0;
   color: #fbbf24;
+  text-transform: uppercase;
+  letter-spacing: 2px;
 }
 
 .forced-deal-panel p {
-  font-size: 11px;
-  margin: 0;
-  opacity: 0.8;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin: -4px 0 0 0;
+  color: #94a3b8;
 }
 
 .forced-deal-panel .modal-btn {
-  padding: 6px 12px;
-  font-size: 11px;
+  padding: 10px 16px;
+  font-size: 14px;
+  font-weight: 800;
+  letter-spacing: 1px;
+}
+
+.forced-deal-panel .modal-buttons.vertical {
+  width: 100%;
+}
+
+.modal-btn.sneaky {
+  background: linear-gradient(135deg, #818cf8 0%, #6366f1 100%);
+  color: white;
+  box-shadow: 0 4px 15px rgba(99, 102, 241, 0.4);
+}
+
+.modal-btn.move {
+  background: linear-gradient(135deg, #f472b6 0%, #ec4899 100%);
+  color: white;
+  box-shadow: 0 4px 15px rgba(236, 72, 153, 0.4);
 }
 
 .forced-deal-panel .target-btn {

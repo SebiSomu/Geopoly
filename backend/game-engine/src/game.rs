@@ -1432,7 +1432,7 @@ impl Game {
                     self.players[idx].release_from_jail();
                     println!("🔓 Ai ieșit gratuit din închisoare!");
                     let name = self.players[idx].name.clone();
-                    self.log_action(Some(idx), format!("{} used surprise card: Get Out Of Jail Free", name));
+                    self.log_action(Some(idx), format!("{} used chance card: Get Out Of Jail Free", name));
                 } else {
                     // Dacă îl "folosește" când nu e în închisoare (probabil din greșeală sau UI a permis)
                     // Îl punem la loc dacă nu e cazul sau doar dăm mesaj
@@ -1696,7 +1696,13 @@ impl Game {
                 };
                 println!("Așteptăm decizia jucătorului {}...", self.players[buyer_idx].name);
             } else {
-                println!("Nu ai destui bani pentru a cumpăra această proprietate.");
+                println!("Nu ai destui bani pentru a cumpăra această proprietate. Se intră automat la LICITAȚIE!");
+                println!("{}", "🔨 AUCTION! Bidding starts at M20".bright_yellow());
+                self.step = GameStep::WaitingForAuction {
+                    dest_id: dest.id,
+                    current_bid: 20,
+                    highest_bidder: None,
+                };
             }
         }
     }
@@ -1776,7 +1782,8 @@ impl Game {
         println!("{}", format!("📜 {}", card.description).bright_yellow());
 
         let c_name = self.players[player_idx].name.clone();
-        self.log_action(Some(player_idx), format!("{} got a surprise card", c_name));
+        let c_desc = card.description.clone();
+        self.log_action(Some(player_idx), format!("{} got a chance card: {}", c_name, c_desc));
 
         if card.can_keep {
             self.players[player_idx].chance_cards.push(card);

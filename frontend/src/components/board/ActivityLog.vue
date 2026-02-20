@@ -128,7 +128,7 @@ const displayEntries = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 2px;
-  max-height: 120px; /* Fits roughly 5 entries */
+  max-height: 120px; 
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.2) transparent;
