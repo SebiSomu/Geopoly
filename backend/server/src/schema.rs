@@ -45,6 +45,12 @@ pub struct AuctionData {
 }
 
 #[derive(SimpleObject)]
+pub struct ActivityLogEntryDisplay {
+    pub player_idx: Option<u8>,
+    pub message: String,
+}
+
+#[derive(SimpleObject)]
 pub struct GameStateDisplay {
     pub current_turn_index: u8,
     pub last_die1: u8,
@@ -60,6 +66,7 @@ pub struct GameStateDisplay {
     pub target_selection: Option<TargetSelectionData>,
     pub dice_duel: Option<DiceDuelData>,
     pub pending_auction: Option<AuctionData>,
+    pub activity_log: Vec<ActivityLogEntryDisplay>,
 }
 
 #[ComplexObject]
@@ -162,6 +169,10 @@ impl Lobby {
                 target_selection,
                 dice_duel,
                 pending_auction,
+                activity_log: game.activity_log.iter().rev().take(5).map(|e| ActivityLogEntryDisplay {
+                    player_idx: e.player_idx.map(|i| i as u8),
+                    message: e.message.clone(),
+                }).collect(),
             })
         } else {
             None

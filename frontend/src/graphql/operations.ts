@@ -115,6 +115,10 @@ export const GET_LOBBY_QUERY = gql`
           currentBid
           highestBidderIdx
         }
+        activityLog {
+          playerIdx
+          message
+        }
       }
       players {
         username

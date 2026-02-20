@@ -41,6 +41,12 @@ pub enum GameAction {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ActivityLogEntry {
+    pub player_idx: Option<usize>,
+    pub message: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TurnResult {
     pub die1: u8,
     pub die2: u8,
@@ -65,6 +71,7 @@ pub struct Game {
     pub step: GameStep,
     pub last_dice: Option<(u8, u8)>,
     pub history: Vec<GameAction>,
+    pub activity_log: Vec<ActivityLogEntry>,
 }
 
 impl Game {
@@ -96,7 +103,12 @@ impl Game {
             step: GameStep::WaitingForRoll,
             last_dice: None,
             history: Vec::new(),
+            activity_log: Vec::new(),
         }
+    }
+
+    fn log_action(&mut self, player_idx: Option<usize>, message: String) {
+        self.activity_log.push(ActivityLogEntry { player_idx, message });
     }
 
     /// Execută o aruncare de zaruri pentru jucătorul curent
@@ -220,6 +232,8 @@ impl Game {
                     println!("\n{}", "🚫 A TREIA DUBLĂ! Mergi direct la ÎNCHISOARE!".red());
                     self.players[player_idx].send_to_jail();
                     self.players[player_idx].consecutive_doubles = 0;
+                    let name = self.players[player_idx].name.clone();
+                    self.log_action(Some(player_idx), format!("{} rolled doubles 3 times in a row and got into prison", name));
                     self.end_turn();
 
                     return Ok(TurnResult {
@@ -340,6 +354,8 @@ impl Game {
                  if self.players[player_idx].pay_money(100) {
                      self.players[player_idx].release_from_jail();
                      released = true;
+                     let name = self.players[player_idx].name.clone();
+                     self.log_action(Some(player_idx), format!("{} paid $100 to get out of prison", name));
                      let move_amount = d1 + d2;
                      self.move_player(move_amount as i32);
                      self.handle_landing(player_idx);
@@ -584,6 +600,9 @@ impl Game {
                     });
 
                     println!("{}", format!("✅ {} a plătit M100 pentru First Class!", self.players[player_idx].name).green());
+
+                    let fc_player_name = self.players[player_idx].name.clone();
+                    self.log_action(Some(player_idx), format!("{} bought First Class", fc_player_name));
 
                     let stamp = Stamp::first_class();
 
@@ -837,6 +856,9 @@ impl Game {
                      to: Some(challenger_idx), 
                      amount: 100 
                  });
+                 let d_loser = self.players[target_idx].name.clone();
+                 let d_winner = self.players[challenger_idx].name.clone();
+                 self.log_action(Some(target_idx), format!("{} paid $100 to {}", d_loser, d_winner));
             } else if tr > cr {
                  println!("🏆 {} câștigă duelul! Primește M100.", self.players[target_idx].name);
                  self.players[challenger_idx].pay_money(100);
@@ -846,6 +868,9 @@ impl Game {
                      to: Some(target_idx), 
                      amount: 100 
                  });
+                 let d_loser2 = self.players[challenger_idx].name.clone();
+                 let d_winner2 = self.players[target_idx].name.clone();
+                 self.log_action(Some(challenger_idx), format!("{} paid $100 to {}", d_loser2, d_winner2));
             } else {
                  println!("🤝 Egalitate! Nimeni nu plătește.");
             }
@@ -881,7 +906,9 @@ impl Game {
             .ok_or_else(|| "Nu deții acest cartonaș!".to_string())?;
 
         let card = self.players[player_idx].here_and_now_cards.remove(card_idx);
-        println!("🎭 {} folosește cartonașul: {}", self.players[player_idx].name, card.description);
+        let player_name = self.players[player_idx].name.clone();
+        println!("🎭 {} folosește cartonașul: {}", player_name, card.description);
+        self.log_action(Some(player_idx), format!("{} used treasure card: {}", player_name, card.description));
 
         self.execute_here_and_now_action(player_idx, card.action.clone())?;
         self.here_and_now_deck.discard(card);
@@ -1259,6 +1286,8 @@ impl Game {
                 to: Some(player_idx), 
                 amount: 200 
             });
+            let name = self.players[player_idx].name.clone();
+            self.log_action(Some(player_idx), format!("{} landed on Start and received $200", name));
         }
         
         self.history.push(GameAction::Move {
@@ -1402,6 +1431,8 @@ impl Game {
                 if self.players[idx].in_jail {
                     self.players[idx].release_from_jail();
                     println!("🔓 Ai ieșit gratuit din închisoare!");
+                    let name = self.players[idx].name.clone();
+                    self.log_action(Some(idx), format!("{} used surprise card: Get Out Of Jail Free", name));
                 } else {
                     // Dacă îl "folosește" când nu e în închisoare (probabil din greșeală sau UI a permis)
                     // Îl punem la loc dacă nu e cazul sau doar dăm mesaj
@@ -1546,9 +1577,11 @@ impl Game {
             }
             Space::GoToJail => {
                 println!("{}", "👮 Mergi direct la ÎNCHISOARE!".red());
+                let name = self.players[player_idx].name.clone();
                 let player = &mut self.players[player_idx];
                 player.send_to_jail();
                 self.history.push(GameAction::GoToJail { player_idx });
+                self.log_action(Some(player_idx), format!("{} got into prison", name));
             }
             Space::JustVisiting => {
                 println!("{}", "👀 Doar în vizită la închisoare.".cyan());
@@ -1616,12 +1649,15 @@ impl Game {
 
                 if self.players[player_idx].pay_money(tax) {
                     self.players[owner_idx].add_money(tax);
-                    self.history.push(GameAction::Payment {
-                        from: Some(player_idx),
-                        to: Some(owner_idx),
-                        amount: tax
-                    });
-                    println!("{}", "Taxă plătită!".green());
+                self.history.push(GameAction::Payment {
+                    from: Some(player_idx),
+                    to: Some(owner_idx),
+                    amount: tax
+                });
+                let payer = self.players[player_idx].name.clone();
+                let receiver = self.players[owner_idx].name.clone();
+                self.log_action(Some(player_idx), format!("{} paid ${} to {}", payer, tax, receiver));
+                println!("{}", "Taxă plătită!".green());
                 } else {
                     println!("{}", "Nu ai suficienți bani!".red());
                     self.handle_bankruptcy(player_idx, Some(owner_idx));
@@ -1699,6 +1735,9 @@ impl Game {
         let card = self.here_and_now_deck.draw();
         println!("{}", format!("📜 {}", card.description).bright_cyan());
 
+        let h_name = self.players[player_idx].name.clone();
+        self.log_action(Some(player_idx), format!("{} got a treasure card", h_name));
+
         // îl punem în mână mereu
         self.players[player_idx].here_and_now_cards.push(card.clone());
 
@@ -1735,6 +1774,9 @@ impl Game {
 
         let card = self.chance_deck.draw();
         println!("{}", format!("📜 {}", card.description).bright_yellow());
+
+        let c_name = self.players[player_idx].name.clone();
+        self.log_action(Some(player_idx), format!("{} got a surprise card", c_name));
 
         if card.can_keep {
             self.players[player_idx].chance_cards.push(card);
@@ -1919,6 +1961,9 @@ impl Game {
                         amount: current_bid,
                     });
                     println!("{}", format!("🔨 {} wins the auction for M{}!", self.players[winner_idx].name, current_bid).bright_green());
+                    let a_name = self.players[winner_idx].name.clone();
+                    let a_dest_name = dest.name.clone();
+                    self.log_action(Some(winner_idx), format!("{} won auction for {} at ${}", a_name, a_dest_name, current_bid));
                     self.acquire_property(winner_idx, &dest);
                 } else {
                     println!("{}", "Winner can't afford the bid!".red());
@@ -1955,6 +2000,10 @@ impl Game {
             stamp_id: format!("{}", dest.id),
             is_first_class: false
         });
+
+        let name = self.players[player_idx].name.clone();
+        let dest_name = dest.name.clone();
+        self.log_action(Some(player_idx), format!("{} bought 🏠 {}", name, dest_name));
 
         self.add_stamp_with_checks(player_idx, stamp)
     }

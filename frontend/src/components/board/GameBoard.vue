@@ -11,6 +11,7 @@ import {
 import Passport from './Passport.vue'
 import Stamp from './Stamp.vue'
 import DicePanel from './DicePanel.vue'
+import ActivityLog from './ActivityLog.vue'
 import CardStack from './CardStack.vue'
 import GameToken from './GameToken.vue'
 import CardHand from '../CardHand.vue'
@@ -78,6 +79,7 @@ const gameState = reactive({
   diceDuel: null as { challengerIdx: number; targetIdx: number; challengerRoll: number | null; targetRoll: number | null } | null,
   pendingAuction: null as { destId: number; destName: string; currentBid: number; highestBidderIdx: number | null } | null,
   auctionTimer: 0,
+  activityLog: [] as Array<{ playerIdx: number | null; message: string }>,
 })
 
 let auctionInterval: any = null;
@@ -134,6 +136,7 @@ watchEffect(() => {
       // If we already have a pendingAuction and the ID/bid matches, update it (to keep the local object ref if possible, or just replace)
       // Actually, standard replacing is fine, the watch will handle diffing deeply or property-wise
       gameState.pendingAuction = lobby.gameState.pendingAuction || null
+      gameState.activityLog = lobby.gameState.activityLog || []
 
       // Sync turn and dice, BUT only if we are not currently animating a roll ourselves
       if (!gameState.isRolling && !gameState.isMoving) {
@@ -969,6 +972,13 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
               :duelData="gameState.diceDuel ?? undefined"
               @roll="rollDice"
               @rollDuel="handleRollDuelDie"
+            />
+
+            <!-- Activity Log -->
+            <ActivityLog
+              class="activity-log-pos"
+              :entries="gameState.activityLog"
+              :players="gameState.players.map(p => ({ name: p.name, character: p.character }))"
             />
           </div>
 
@@ -2330,9 +2340,18 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 .dice-container-center {
   z-index: 10;
   display: flex;
+  flex-direction: column;
   justify-content: center;
   align-items: center;
   pointer-events: auto;
+  transform: translateY(-85px); /* Main dice shift */
+  position: relative; /* Anchor for absolute log */
+}
+
+.activity-log-pos {
+  position: absolute;
+  top: 100%;
+  margin-top: 40px; /* Gap to move it even lower as requested */
 }
 
 .dice-control-panel {
@@ -2346,6 +2365,42 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
   border: 2px solid rgba(255, 255, 255, 0.1);
   box-shadow: 0 8px 32px rgba(0, 0, 0, 0.8);
   backdrop-filter: blur(10px);
+}
+
+.forced-deal-panel {
+  padding: 10px 14px;
+  gap: 8px;
+  max-width: 220px;
+}
+
+.forced-deal-panel h3 {
+  font-size: 14px;
+  margin: 0;
+  color: #fbbf24;
+}
+
+.forced-deal-panel p {
+  font-size: 11px;
+  margin: 0;
+  opacity: 0.8;
+}
+
+.forced-deal-panel .modal-btn {
+  padding: 6px 12px;
+  font-size: 11px;
+}
+
+.forced-deal-panel .target-btn {
+  padding: 4px;
+}
+
+.forced-deal-panel .target-token {
+  width: 24px;
+  height: 24px;
+}
+
+.forced-deal-panel .target-selection-grid {
+  gap: 8px;
 }
 
 .roll-button {
