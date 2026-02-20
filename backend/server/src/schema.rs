@@ -32,8 +32,10 @@ pub struct TargetSelectionData {
 pub struct DiceDuelData {
     pub challenger_idx: usize,
     pub target_idx: usize,
-    pub challenger_roll: Option<u8>,
-    pub target_roll: Option<u8>,
+    pub challenger_die1: Option<u8>,
+    pub challenger_die2: Option<u8>,
+    pub target_die1: Option<u8>,
+    pub target_die2: Option<u8>,
 }
 
 #[derive(SimpleObject)]
@@ -66,6 +68,7 @@ pub struct GameStateDisplay {
     pub target_selection: Option<TargetSelectionData>,
     pub dice_duel: Option<DiceDuelData>,
     pub pending_auction: Option<AuctionData>,
+    pub is_jail_decision: bool,
     pub activity_log: Vec<ActivityLogEntryDisplay>,
 }
 
@@ -108,8 +111,10 @@ impl Lobby {
                     Some(DiceDuelData {
                         challenger_idx: *challenger_idx,
                         target_idx: *target_idx,
-                        challenger_roll: *challenger_roll,
-                        target_roll: *target_roll,
+                        challenger_die1: challenger_roll.map(|r| r.0),
+                        challenger_die2: challenger_roll.map(|r| r.1),
+                        target_die1: target_roll.map(|r| r.0),
+                        target_die2: target_roll.map(|r| r.1),
                     })
                 },
                 _ => None,
@@ -169,6 +174,7 @@ impl Lobby {
                 target_selection,
                 dice_duel,
                 pending_auction,
+                is_jail_decision: game.step == GameStep::WaitingForJailDecision,
                 activity_log: game.activity_log.iter().rev().take(5).map(|e| ActivityLogEntryDisplay {
                     player_idx: e.player_idx.map(|i| i as u8),
                     message: e.message.clone(),
@@ -494,6 +500,60 @@ impl MutationRoot {
             ).await?;
 
             // Map Result
+            Ok(RollResult {
+                die1: result.die1,
+                die2: result.die2,
+                is_double: result.is_double,
+                is_forced_deal: result.is_forced_deal,
+                new_position: result.new_position,
+                went_to_jail: result.went_to_jail,
+                turn_ends: result.turn_ends,
+                current_turn_index: result.current_player_index,
+            })
+        } else {
+            Err(Error::new("Lobby not found"))
+        }
+    }
+
+    async fn resolve_jail_decision(&self, ctx: &Context<'_>, code: String, username: String, action: String) -> Result<RollResult> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+
+        if let Some(mut lobby) = lobby_opt {
+            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+
+            // Validate turn
+            let current_idx = game.current_player_idx;
+            if game.players[current_idx].name != username {
+                return Err(Error::new("Nu este rândul tău!"));
+            }
+
+            let jail_action = match action.as_str() {
+                "PayFine" => game_engine::game::JailAction::PayFine,
+                "UseCard" => game_engine::game::JailAction::UseCard,
+                "Roll" => game_engine::game::JailAction::Roll,
+                _ => return Err(Error::new("Acțiune invalidă pentru închisoare")),
+            };
+
+            // Execute Action
+            let result = game.resolve_jail_decision(jail_action)
+                .map_err(|e| Error::new(e))?;
+
+            // Sync State
+            sync_lobby_state(&mut lobby.players, game);
+
+            // Save
+            db.lobbies().update_one(
+                doc! { "_id": lobby.id },
+                doc! { 
+                    "$set": { 
+                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                    } 
+                },
+                None
+            ).await?;
+
             Ok(RollResult {
                 die1: result.die1,
                 die2: result.die2,

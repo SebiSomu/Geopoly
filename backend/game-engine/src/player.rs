@@ -89,6 +89,7 @@ impl Player {
         self.in_jail = true;
         self.jail_turns = 0;
         self.position = 10;
+        self.consecutive_doubles = 0;
     }
 
     pub fn release_from_jail(&mut self) {

@@ -11,8 +11,10 @@ interface Player {
 interface DuelData {
   challengerIdx: number
   targetIdx: number
-  challengerRoll: number | null
-  targetRoll: number | null
+  challengerDie1: number | null
+  challengerDie2: number | null
+  targetDie1: number | null
+  targetDie2: number | null
 }
 
 interface Props {
@@ -58,8 +60,8 @@ const target = computed(() => props.players && props.duelData ? props.players[pr
 
 const nextRollerIdx = computed(() => {
   if (!props.duelData) return -1
-  if (props.duelData.challengerRoll === null) return props.duelData.challengerIdx
-  if (props.duelData.targetRoll === null) return props.duelData.targetIdx
+  if (props.duelData.challengerDie1 === null) return props.duelData.challengerIdx
+  if (props.duelData.targetDie1 === null) return props.duelData.targetIdx
   return -1
 })
 
@@ -77,23 +79,38 @@ const nextRollerName = computed(() => {
 })
 
 const isWinner = (idx: number) => {
-  if (props.duelData && props.duelData.challengerRoll !== null && props.duelData.targetRoll !== null) {
-      if (idx === props.duelData.challengerIdx) return props.duelData.challengerRoll > props.duelData.targetRoll
-      if (idx === props.duelData.targetIdx) return props.duelData.targetRoll > props.duelData.challengerRoll
+  if (props.duelData && props.duelData.challengerDie1 !== null && props.duelData.targetDie1 !== null) {
+      const cSum = (props.duelData.challengerDie1 || 0) + (props.duelData.challengerDie2 || 0)
+      const tSum = (props.duelData.targetDie1 || 0) + (props.duelData.targetDie2 || 0)
+      if (idx === props.duelData.challengerIdx) return cSum > tSum
+      if (idx === props.duelData.targetIdx) return tSum > cSum
   }
   return false
 }
 
 const isTie = computed(() => {
-    return props.duelData && 
-           props.duelData.challengerRoll !== null && 
-           props.duelData.targetRoll !== null && 
-           props.duelData.challengerRoll === props.duelData.targetRoll
+    if (!props.duelData || props.duelData.challengerDie1 === null || props.duelData.targetDie1 === null) return false
+    const cSum = (props.duelData.challengerDie1 || 0) + (props.duelData.challengerDie2 || 0)
+    const tSum = (props.duelData.targetDie1 || 0) + (props.duelData.targetDie2 || 0)
+    return cSum === tSum
 })
 
 // Unified Dice Values
-const d1 = computed(() => props.isDuel ? (props.duelData?.challengerRoll || 1) : props.diceValue1)
-const d2 = computed(() => props.isDuel ? (props.duelData?.targetRoll || 3) : props.diceValue2)
+const d1 = computed(() => {
+  if (props.isDuel && props.duelData) {
+    // If target has rolled, show their dice. If only challenger rolled, show theirs.
+    if (props.duelData.targetDie1 !== null) return props.duelData.targetDie1;
+    return props.duelData.challengerDie1 || 1;
+  }
+  return props.diceValue1;
+})
+const d2 = computed(() => {
+  if (props.isDuel && props.duelData) {
+    if (props.duelData.targetDie2 !== null) return props.duelData.targetDie2;
+    return props.duelData.challengerDie2 || 1;
+  }
+  return props.diceValue2;
+})
 
 const handleRollClick = () => {
   if (props.isDuel) {
@@ -110,7 +127,7 @@ const isButtonDisabled = computed(() => {
   return !props.isMyTurn || props.isRolling || props.isMoving || props.forcedDealActive
 })
 
-const buttonText = computed(() => props.isDuel ? 'ROLL DIE' : 'ROLL')
+const buttonText = computed(() => props.isDuel ? 'ROLL DICE' : 'ROLL')
 </script>
 
 <template>

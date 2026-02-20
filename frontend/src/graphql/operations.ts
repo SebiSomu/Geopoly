@@ -106,8 +106,10 @@ export const GET_LOBBY_QUERY = gql`
         diceDuel {
           challengerIdx
           targetIdx
-          challengerRoll
-          targetRoll
+          challengerDie1
+          challengerDie2
+          targetDie1
+          targetDie2
         }
         pendingAuction {
           destId
@@ -119,6 +121,7 @@ export const GET_LOBBY_QUERY = gql`
           playerIdx
           message
         }
+        isJailDecision
       }
       players {
         username
@@ -238,6 +241,20 @@ export const RESOLVE_AUCTION_MUTATION = gql`
   mutation ResolveAuction($code: String!) {
     resolveAuction(code: $code) {
       code
+    }
+  }
+`
+export const RESOLVE_JAIL_DECISION_MUTATION = gql`
+  mutation ResolveJailDecision($code: String!, $username: String!, $action: String!) {
+    resolveJailDecision(code: $code, username: $username, action: $action) {
+      die1
+      die2
+      isDouble
+      isForcedDeal
+      newPosition
+      wentToJail
+      turnEnds
+      currentTurnIndex
     }
   }
 `

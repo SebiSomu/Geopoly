@@ -128,6 +128,12 @@ impl ChanceDeck {
         let mut rng = thread_rng();
         cards.shuffle(&mut rng);
 
+        // FOR TEST: Move Dice Challenge to the top (last position for pop())
+        if let Some(pos) = cards.iter().position(|c| c.id == "chance_dice_challenge_1") {
+            let card = cards.remove(pos);
+            cards.push(card);
+        }
+
         ChanceDeck {
             cards,
             discard_pile: Vec::new(),
@@ -144,6 +150,11 @@ impl ChanceDeck {
         // ✅ dacă încă e gol (toate cărțile sunt în mâinile jucătorilor), refacem pachetul
         if self.cards.is_empty() {
             *self = ChanceDeck::new();
+        }
+
+        // FOR TEST: Always draw Dice Challenge if available
+        if let Some(pos) = self.cards.iter().position(|c| c.id == "chance_dice_challenge_1") {
+            return self.cards.remove(pos);
         }
 
         self.cards.pop().expect("Chance deck is empty!")

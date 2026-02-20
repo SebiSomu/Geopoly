@@ -26,10 +26,18 @@ pub enum GameStep {
     WaitingForDiceDuel { 
         challenger_idx: usize, 
         target_idx: usize, 
-        challenger_roll: Option<u8>, 
-        target_roll: Option<u8> 
+        challenger_roll: Option<(u8, u8)>, 
+        target_roll: Option<(u8, u8)> 
     },
     WaitingForAuction { dest_id: u8, current_bid: u32, highest_bidder: Option<usize> },
+    WaitingForJailDecision,
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub enum JailAction {
+    PayFine,
+    UseCard,
+    Roll,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -405,6 +413,81 @@ impl Game {
                 turn_ends,
                 current_player_index: self.current_player_idx as u8,
             })
+        }
+    }
+
+    pub fn resolve_jail_decision(&mut self, action: JailAction) -> Result<TurnResult, String> {
+        if self.step != GameStep::WaitingForJailDecision {
+            return Err("Not waiting for jail decision".to_string());
+        }
+
+        let player_idx = self.current_player_idx;
+        if !self.players[player_idx].in_jail {
+            return Err("Player is not in jail".to_string());
+        }
+
+        match action {
+            JailAction::PayFine => {
+                if self.players[player_idx].pay_money(100) {
+                    println!("{}", "Ai plătit amenda de M100!".green());
+                    self.players[player_idx].release_from_jail();
+                    let name = self.players[player_idx].name.clone();
+                    self.log_action(Some(player_idx), format!("{} paid $100 up to get out of jail", name));
+                    self.end_turn();
+                    Ok(TurnResult {
+                        die1: 0, die2: 0,
+                        is_double: false,
+                        is_forced_deal: false,
+                        new_position: self.players[player_idx].position as u8,
+                        went_to_jail: false,
+                        turn_ends: true,
+                        current_player_index: self.current_player_idx as u8,
+                    })
+                } else {
+                    Err("Nu ai suficienți bani pentru amendă!".to_string())
+                }
+            },
+            JailAction::UseCard => {
+                // Check if player has the card
+                if let Some(pos) = self.players[player_idx].chance_cards.iter().position(|c| c.id == "jail_free") {
+                    let card = self.players[player_idx].chance_cards.remove(pos);
+                    self.chance_deck.discard(card);
+                    self.players[player_idx].release_from_jail();
+                    let name = self.players[player_idx].name.clone();
+                    self.log_action(Some(player_idx), format!("{} used a Get Out of Jail Free card", name));
+                    self.end_turn();
+                    Ok(TurnResult {
+                        die1: 0, die2: 0,
+                        is_double: false,
+                        is_forced_deal: false,
+                        new_position: self.players[player_idx].position as u8,
+                        went_to_jail: false,
+                        turn_ends: true,
+                        current_player_index: self.current_player_idx as u8,
+                    })
+                } else if let Some(pos) = self.players[player_idx].here_and_now_cards.iter().position(|c| matches!(c.action, HereAndNowCardAction::GetOutOfJailFree)) {
+                     let card = self.players[player_idx].here_and_now_cards.remove(pos);
+                     self.here_and_now_deck.discard(card);
+                     self.players[player_idx].release_from_jail();
+                     let name = self.players[player_idx].name.clone();
+                     self.log_action(Some(player_idx), format!("{} used a Get Out of Jail Free card", name));
+                     self.end_turn();
+                     Ok(TurnResult {
+                        die1: 0, die2: 0,
+                        is_double: false,
+                        is_forced_deal: false,
+                        new_position: self.players[player_idx].position as u8,
+                        went_to_jail: false,
+                        turn_ends: true,
+                        current_player_index: self.current_player_idx as u8,
+                    })
+                } else {
+                    Err("Nu ai un cartonaș 'Ieși din închisoare'!".to_string())
+                }
+            },
+            JailAction::Roll => {
+                self.handle_jail_roll()
+            }
         }
     }
 
@@ -823,18 +906,19 @@ impl Game {
             _ => return Err("Nu ești într-un duel de zaruri!".to_string()),
         };
 
-        // Determine who is rolling based on current state (simple sequential check)
-        // Challenger rolls first, then target
+        // Determine who is rolling based on current state
         let roller_idx = if c_roll.is_none() { challenger_idx } else { target_idx };
         
-        // Roll one die
-        let roll = rand::thread_rng().gen_range(1..=6);
-        println!("🎲 {} a dat {} în duel!", self.players[roller_idx].name, roll);
+        // Roll TWO dice
+        let d1 = rand::thread_rng().gen_range(1..=6);
+        let d2 = rand::thread_rng().gen_range(1..=6);
+        let sum = d1 + d2;
+        println!("🎲 {} a dat {} ({} + {}) în duel!", self.players[roller_idx].name, sum, d1, d2);
 
         if c_roll.is_none() {
-            c_roll = Some(roll);
+            c_roll = Some((d1, d2));
         } else {
-            t_roll = Some(roll);
+            t_roll = Some((d1, d2));
         }
 
         self.step = GameStep::WaitingForDiceDuel {
@@ -844,10 +928,12 @@ impl Game {
             target_roll: t_roll
         };
 
-        if let (Some(cr), Some(tr)) = (c_roll, t_roll) {
-            println!("🏁 Rezultat Duel: {} ({}) vs {} ({})", self.players[challenger_idx].name, cr, self.players[target_idx].name, tr);
+        if let (Some((c1, c2)), Some((t1, t2))) = (c_roll, t_roll) {
+            let cr_sum = c1 + c2;
+            let tr_sum = t1 + t2;
+            println!("🏁 Rezultat Duel: {} ({}) vs {} ({})", self.players[challenger_idx].name, cr_sum, self.players[target_idx].name, tr_sum);
             
-            if cr > tr {
+            if cr_sum > tr_sum {
                  println!("🏆 {} câștigă duelul! Primește M100.", self.players[challenger_idx].name);
                  self.players[target_idx].pay_money(100);
                  self.players[challenger_idx].add_money(100);
@@ -859,7 +945,7 @@ impl Game {
                  let d_loser = self.players[target_idx].name.clone();
                  let d_winner = self.players[challenger_idx].name.clone();
                  self.log_action(Some(target_idx), format!("{} paid $100 to {}", d_loser, d_winner));
-            } else if tr > cr {
+            } else if tr_sum > cr_sum {
                  println!("🏆 {} câștigă duelul! Primește M100.", self.players[target_idx].name);
                  self.players[challenger_idx].pay_money(100);
                  self.players[target_idx].add_money(100);
@@ -879,8 +965,8 @@ impl Game {
             self.end_turn();
              
              return Ok(TurnResult {
-                die1: cr, die2: tr,
-                is_double: cr == tr, // Just for UI visual?
+                die1: c1 + c2, die2: t1 + t2, // This return is technically for the LAST roll (target)
+                is_double: cr_sum == tr_sum,
                 is_forced_deal: false,
                 new_position: self.players[self.current_player_idx].position as u8,
                 went_to_jail: false,
@@ -890,7 +976,7 @@ impl Game {
         }
 
         Ok(TurnResult {
-            die1: roll, die2: 0,
+            die1: d1, die2: d2,
             is_double: false,
             is_forced_deal: false,
             new_position: self.players[self.current_player_idx].position as u8,
@@ -1213,7 +1299,12 @@ impl Game {
     }
 
     fn end_turn(&mut self) {
-        if self.players[self.current_player_idx].consecutive_doubles == 0 || self.players[self.current_player_idx].in_jail {
+        // If turn ending is triggered, we move next regardless of old doubles
+        // unless they are currently rolling doubles and are NOT in jail.
+        let in_jail = self.players[self.current_player_idx].in_jail;
+        let consecutive_doubles = self.players[self.current_player_idx].consecutive_doubles;
+        
+        if consecutive_doubles == 0 || in_jail {
              // Logică incrementare tură globală
             if self.current_player_idx == self.players.len() - 1 {
                 self.turn_number += 1;
@@ -1222,7 +1313,12 @@ impl Game {
             }
             
             self.current_player_idx = (self.current_player_idx + 1) % self.players.len();
-            self.step = GameStep::WaitingForRoll;
+            
+            if self.players[self.current_player_idx].in_jail {
+                self.step = GameStep::WaitingForJailDecision;
+            } else {
+                self.step = GameStep::WaitingForRoll;
+            }
             
             println!("\n{} {}", "Rândul jucătorului:".green().bold(), self.players[self.current_player_idx].name.yellow().bold());
         } 

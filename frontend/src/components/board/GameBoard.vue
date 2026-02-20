@@ -6,7 +6,8 @@ import {
   RESOLVE_PURCHASE_MUTATION, RESOLVE_FIRST_CLASS_MUTATION, 
   RESOLVE_AIRPORT_DECISION_MUTATION, RESOLVE_AIRPORT_DESTINATION_MUTATION, 
   RESOLVE_TARGET_SELECTION_MUTATION, ROLL_DUEL_DIE_MUTATION,
-  PLACE_BID_MUTATION, RESOLVE_AUCTION_MUTATION
+  PLACE_BID_MUTATION, RESOLVE_AUCTION_MUTATION,
+  RESOLVE_JAIL_DECISION_MUTATION
 } from '../../graphql/operations'
 import Passport from './Passport.vue'
 import Stamp from './Stamp.vue'
@@ -41,6 +42,7 @@ const { mutate: resolveTargetSelectionMutation } = useMutation(RESOLVE_TARGET_SE
 const { mutate: rollDuelDieMutation } = useMutation(ROLL_DUEL_DIE_MUTATION);
 const { mutate: placeBidMutation } = useMutation(PLACE_BID_MUTATION);
 const { mutate: resolveAuctionMutation } = useMutation(RESOLVE_AUCTION_MUTATION);
+const { mutate: resolveJailDecisionMutation } = useMutation(RESOLVE_JAIL_DECISION_MUTATION);
 
 // Game simulation state (local representation of server state)
 const gameState = reactive({
@@ -77,10 +79,18 @@ const gameState = reactive({
   moneyNotifications: [] as Array<{ id: number; amount: string; type: 'plus' | 'minus'; x: number; y: number; playerName: string }>,
   pickingTarget: false,
   targetSelection: null as { action: string; cardId: string | null; selectorIdx: number } | null,
-  diceDuel: null as { challengerIdx: number; targetIdx: number; challengerRoll: number | null; targetRoll: number | null } | null,
+  diceDuel: null as { 
+    challengerIdx: number; 
+    targetIdx: number; 
+    challengerDie1: number | null; 
+    challengerDie2: number | null; 
+    targetDie1: number | null; 
+    targetDie2: number | null; 
+  } | null,
   pendingAuction: null as { destId: number; destName: string; currentBid: number; highestBidderIdx: number | null } | null,
   auctionTimer: 0,
   activityLog: [] as Array<{ playerIdx: number | null; message: string }>,
+  isJailDecision: false,
 })
 
 let auctionInterval: any = null;
@@ -132,7 +142,18 @@ watchEffect(() => {
       gameState.pendingAirportDecision = lobby.gameState.pendingAirportDecision || null
       gameState.pendingAirportDestination = lobby.gameState.pendingAirportDestination || null
       gameState.targetSelection = lobby.gameState.targetSelection || null
-      gameState.diceDuel = lobby.gameState.diceDuel || null
+      if (lobby.gameState.diceDuel) {
+        gameState.diceDuel = {
+          challengerIdx: lobby.gameState.diceDuel.challengerIdx,
+          targetIdx: lobby.gameState.diceDuel.targetIdx,
+          challengerDie1: lobby.gameState.diceDuel.challengerDie1,
+          challengerDie2: lobby.gameState.diceDuel.challengerDie2,
+          targetDie1: lobby.gameState.diceDuel.targetDie1,
+          targetDie2: lobby.gameState.diceDuel.targetDie2
+        }
+      } else {
+        gameState.diceDuel = null
+      }
       // Check for auction
       // If we already have a pendingAuction and the ID/bid matches, update it (to keep the local object ref if possible, or just replace)
       // Actually, standard replacing is fine, the watch will handle diffing deeply or property-wise
@@ -145,8 +166,9 @@ watchEffect(() => {
         if (lobby.gameState.lastDie1) gameState.diceValue1 = lobby.gameState.lastDie1
         if (lobby.gameState.lastDie2) gameState.diceValue2 = lobby.gameState.lastDie2
         gameState.awaitingAction = lobby.gameState.awaitingAction
-        gameState.forcedDealActive = lobby.gameState.isForcedDeal
+        gameState.isJailDecision = lobby.gameState.isJailDecision || false
       }
+      gameState.forcedDealActive = lobby.gameState.isForcedDeal
     }
 
     // 2. Sync Players
@@ -201,11 +223,20 @@ watchEffect(() => {
   }
 })
 
-// Computed check if it's my turn
-// Computed check if it's my turn
 const isMyTurn = computed(() => {
   const currentPlayer = gameState.players[gameState.currentTurnIndex]
   return !!(currentPlayer && currentPlayer.name === username)
+})
+
+const isMyJailDecision = computed(() => {
+  return gameState.isJailDecision && isMyTurn.value;
+})
+
+const myHasJailFreeCard = computed(() => {
+  if (!myPlayerData.value) return false;
+  const hasChanceJailFree = myPlayerData.value.chanceCards.some(c => c.id === 'jail_free');
+  const hasHnNJailFree = myPlayerData.value.hereAndNowCards.some(c => c.id.includes('jail_free')); 
+  return hasChanceJailFree || hasHnNJailFree;
 })
 
 const canBuy = computed(() => {
@@ -392,6 +423,38 @@ const getSpaceRotation = (position: number): string => {
   if (position >= 30 && position <= 39) return 'rotate(0deg)'
   
   return 'rotate(0deg)'
+}
+
+const handleResolveJailDecision = async (action: 'PayFine' | 'UseCard' | 'Roll') => {
+  if (!isMyJailDecision.value) return;
+  
+  try {
+     const response = await resolveJailDecisionMutation({
+       code: props.code,
+       username: username,
+       action
+     });
+
+     const r = response?.data?.resolveJailDecision;
+     if (r) {
+        if (r.die1 > 0) {
+           // ... (rest of the dice removal/anim logic)
+           gameState.diceValue1 = r.die1;
+           gameState.diceValue2 = r.die2;
+           if (!r.wentToJail) {
+               gameState.isRolling = true;
+               setTimeout(() => {
+                 gameState.isRolling = false;
+               }, 600);
+           }
+        }
+        // Always update turn and decision state from response
+        gameState.currentTurnIndex = r.currentTurnIndex;
+        gameState.isJailDecision = false; // Reset locally
+     }
+  } catch (err: any) {
+    alert(err.message);
+  }
 }
 
 // Roll dice function
@@ -933,8 +996,45 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 
             <!-- Active Game UI -->
             <template v-else>
+              <!-- Jail Decision Panel -->
+              <div v-if="gameState.isJailDecision && isMyTurn && !gameState.isGameOver" class="dice-control-panel jail-panel">
+                 <div class="jail-header">
+                    <h3>🔒 IN JAIL</h3>
+                    <p v-if="myPlayerData">Escape options:</p>
+                 </div>
+                 
+                 <div class="jail-options">
+                    <button 
+                      class="modal-btn jail-opt pay" 
+                      @click="handleResolveJailDecision('PayFine')"
+                      :disabled="!isMyJailDecision || (myPlayerData?.money || 0) < 100"
+                    >
+                      <span class="opt-label">PAY M100</span>
+                      <span class="opt-desc">Get out now</span>
+                    </button>
+
+                    <button 
+                      class="modal-btn jail-opt card" 
+                      @click="handleResolveJailDecision('UseCard')"
+                      :disabled="!isMyJailDecision || !myHasJailFreeCard"
+                    >
+                      <span class="opt-label">USE CARD</span>
+                      <span class="opt-desc">Jail Free</span>
+                    </button>
+
+                    <button 
+                      class="modal-btn jail-opt roll" 
+                      @click="handleResolveJailDecision('Roll')"
+                      :disabled="!isMyJailDecision"
+                    >
+                      <span class="opt-label">ROLL</span>
+                      <span class="opt-desc">Try for doubles</span>
+                    </button>
+                 </div>
+              </div>
+
               <!-- Forced Deal Panel (Compact) -->
-              <div v-if="gameState.forcedDealActive && isMyTurn" class="dice-control-panel forced-deal-panel">
+              <div v-else-if="gameState.forcedDealActive && isMyTurn" class="dice-control-panel forced-deal-panel">
                  <template v-if="!gameState.pickingTarget">
                     <h3>⚡ Forced Deal!</h3>
                     <p>Choose your action:</p>
@@ -2493,6 +2593,84 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
   border-radius: 8px;
   text-align: center;
   font-weight: 500;
+}
+
+/* Jail Panel */
+.jail-panel {
+  min-width: 240px; /* Smaller as requested */
+  padding: 16px;
+  gap: 12px;
+  border: 2px solid #ef4444;
+  margin-top: 100px; /* Moved lower */
+}
+
+.jail-header h3 {
+  font-family: 'Oswald', sans-serif;
+  font-size: 1.2rem; /* Slightly smaller */
+  color: #ef4444;
+  margin: 0;
+  letter-spacing: 2px;
+}
+
+.jail-header p {
+  color: #94a3b8;
+  font-size: 0.9rem;
+  margin: 4px 0 0 0;
+}
+
+.jail-options {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  width: 100%;
+}
+
+.jail-opt {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 10px 15px;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+}
+
+.jail-opt .opt-label {
+  font-size: 1rem;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.jail-opt .opt-desc {
+  font-size: 0.7rem;
+  font-weight: 500;
+  opacity: 0.8;
+}
+
+.jail-opt.pay {
+  background: linear-gradient(135deg, #10b981 0%, #059669 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+}
+
+.jail-opt.card {
+  background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3);
+}
+
+.jail-opt.roll {
+  background: linear-gradient(135deg, #6366f1 0%, #4f46e5 100%);
+  color: white;
+  box-shadow: 0 4px 12px rgba(99, 102, 241, 0.3);
+}
+
+.jail-opt:disabled {
+  filter: grayscale(1);
+  opacity: 0.5;
+  cursor: not-allowed;
+  transform: none;
+  box-shadow: none;
 }
 
 /* Forced Deal Modal */
