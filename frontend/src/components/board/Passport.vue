@@ -87,9 +87,6 @@ const clearStamps = (): void => {
   localStamps.value = [];
 };
 
-// ============ Computed Positioning ============
-const COL_WIDTH = 100;
-
 // Local mapping of sizes for positioning (copied from Stamp.vue to ensure 1:1 match)
 const SIZES = {
   grey: 56, 
@@ -125,16 +122,22 @@ const processedStamps = computed(() => {
       let x = 0;
       let y = 0;
       
+      // Calculate available space for stagger to prevent bleeding outside 100px column
+      const columnWidth = 100;
+      const centerX = (columnWidth - diameterPx) / 2;
+      const allowedStagger = Math.max(0, Math.min(12, centerX)); 
+      
       if (p.column === 'left') {
-        const overlap = leftCount === 0 ? 0 : 5;
-        // Zig-zag: Even index in column is RIGHT, Odd is LEFT
-        x = (leftCount % 2 === 0) ? (COL_WIDTH - diameterPx) : 0;
+        const overlap = leftCount === 0 ? 0 : 5; // Reverted to 5px
+        x = (leftCount % 2 === 0) ? (centerX + allowedStagger) : (centerX - allowedStagger);
+        
         y = leftUsedHeight - overlap; 
         leftUsedHeight = y + diameterPx; 
         leftCount++;
       } else {
-        const overlap = rightCount === 0 ? 0 : 5;
-        x = (rightCount % 2 === 0) ? (COL_WIDTH - diameterPx) : 0;
+        const overlap = rightCount === 0 ? 0 : 5; // Reverted to 5px
+        x = (rightCount % 2 === 0) ? (centerX + allowedStagger) : (centerX - allowedStagger);
+        
         y = rightUsedHeight - overlap;
         rightUsedHeight = y + diameterPx;
         rightCount++;
@@ -143,7 +146,7 @@ const processedStamps = computed(() => {
       result.push({
         id: `prop-${index}-${p.name}`,
         colorType: colorKey as any,
-        number: p.destination_id || '★',
+        number: p.destination_id ?? '★',
         x,
         y,
         rotation,

@@ -86,4 +86,3 @@ pub struct Lobby {
     #[graphql(skip)] // We will expose this manually via ComplexObject or specific fields
     pub game: Option<game_engine::game::Game>,
 }
-
