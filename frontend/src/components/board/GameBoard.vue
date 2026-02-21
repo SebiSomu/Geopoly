@@ -720,16 +720,6 @@ const isPropertyOwned = (destId: number) => {
   return gameState.players.some(p => p.properties.some((prop: any) => prop.destination_id === destId));
 }
 
-// Map characters to emojis
-const getCharacterEmoji = (char?: string) => {
-  switch (char) {
-    case 'seal': return '🦭';
-    case 'capybara': return '🐨';
-    case 'cat': return '🐱';
-    case 'dog': return '🐶';
-    default: return '👤';
-  }
-}
 
 // Logic for space selection (Airport flight)
 const getSpacePosition = (type: 'bottom' | 'left' | 'top' | 'right' | 'corner', index: number) => {
@@ -1507,7 +1497,10 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
           zIndex: 50 + idx
         }"
       >
-        <GameToken :type="player.character" />
+        <GameToken 
+          :type="player.character" 
+          :highlight="gameState.currentTurnIndex === idx && idx === myPlayerIdx"
+        />
       </div>
     </div>
   </div>

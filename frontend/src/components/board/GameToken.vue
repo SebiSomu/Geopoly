@@ -4,6 +4,7 @@ import { computed } from 'vue'
 interface Props {
   type: 'seal' | 'capybara' | 'cat' | 'dog'
   color?: string
+  highlight?: boolean
 }
 
 const props = defineProps<Props>()
@@ -20,7 +21,11 @@ const tokenData = computed(() => {
 </script>
 
 <template>
-  <div class="game-token" :style="{ '--token-color': color || tokenData.color }">
+  <div 
+    class="game-token" 
+    :class="{ highlighted: highlight }"
+    :style="{ '--token-color': color || tokenData.color }"
+  >
     <div class="token-base">
       <div class="token-pedestal"></div>
       <div class="token-icon">
@@ -66,14 +71,28 @@ const tokenData = computed(() => {
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
-  cursor: pointer;
+  transition: all 0.3s ease;
   z-index: 20;
 }
 
-.game-token:hover {
-  transform: translateY(-8px) scale(1.2);
-  z-index: 30;
+.game-token.highlighted {
+  filter: drop-shadow(0 0 12px #FFD700);
+  animation: pulse-gold 1.5s infinite ease-in-out;
+}
+
+@keyframes pulse-gold {
+  0% { 
+    transform: scale(1); 
+    filter: drop-shadow(0 0 5px #FFD700) brightness(1); 
+  }
+  50% { 
+    transform: scale(1.25); 
+    filter: drop-shadow(0 0 25px #FFD700) brightness(1.3); 
+  }
+  100% { 
+    transform: scale(1); 
+    filter: drop-shadow(0 0 5px #FFD700) brightness(1); 
+  }
 }
 
 .token-base {
