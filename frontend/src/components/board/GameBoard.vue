@@ -180,7 +180,7 @@ watchEffect(() => {
         name: p.username,
         in_jail: p.inJail || false,
         consecutive_doubles: p.consecutiveDoubles || 0,
-        money: p.money || 1500,
+        money: p.money ?? 1500,
         properties: (p.properties || []).map((prop: any) => ({
           name: prop.name,
           color: prop.color,
@@ -719,7 +719,6 @@ const getSpaceIcon = (type: string): string => {
 const isPropertyOwned = (destId: number) => {
   return gameState.players.some(p => p.properties.some((prop: any) => prop.destination_id === destId));
 }
-
 
 // Logic for space selection (Airport flight)
 const getSpacePosition = (type: 'bottom' | 'left' | 'top' | 'right' | 'corner', index: number) => {

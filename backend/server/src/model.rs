@@ -44,7 +44,7 @@ pub struct Player {
     #[serde(default)]
     pub consecutive_doubles: u8,
     #[serde(default)]
-    pub money: u32,
+    pub money: i32,
     #[serde(default)]
     pub properties: Vec<PropertyInfo>,
     #[serde(default)]

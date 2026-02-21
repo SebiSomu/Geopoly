@@ -5,7 +5,7 @@ use serde::{Serialize, Deserialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Player {
     pub name: String,
-    pub money: u32,
+    pub money: i32,
     pub position: usize,
     pub passport: Passport,
     pub in_jail: bool,
@@ -51,11 +51,11 @@ impl Player {
         }
     }
 
-    pub fn add_money(&mut self, amount: u32) {
+    pub fn add_money(&mut self, amount: i32) {
         self.money += amount;
     }
 
-    pub fn pay_money(&mut self, amount: u32) -> bool {
+    pub fn pay_money(&mut self, amount: i32) -> bool {
         if self.money >= amount {
             self.money -= amount;
             true

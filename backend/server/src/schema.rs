@@ -12,7 +12,7 @@ use game_engine::game::{Game, GameStep};
 pub struct PendingPurchase {
     pub dest_id: u8,
     pub dest_name: String,
-    pub price: u32,
+    pub price: i32,
     pub buyer_idx: usize,
 }
 
@@ -42,7 +42,7 @@ pub struct DiceDuelData {
 pub struct AuctionData {
     pub dest_id: u8,
     pub dest_name: String,
-    pub current_bid: u32,
+    pub current_bid: i32,
     pub highest_bidder_idx: Option<usize>,
 }
 
