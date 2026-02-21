@@ -2,6 +2,7 @@
 
 import { ref, computed } from 'vue';
 import Stamp from './Stamp.vue';
+import GameToken from './GameToken.vue';
 import type { StampColor } from './Stamp.vue';
 
 // ============ Type Definitions ============
@@ -27,7 +28,7 @@ export interface PlacedStamp {
 const props = defineProps<{
   properties?: PassportProperty[];
   playerName?: string;
-  playerEmoji?: string;
+  character?: 'seal' | 'capybara' | 'cat' | 'dog';
 }>();
 
 // ============ State ============
@@ -170,7 +171,9 @@ defineExpose({ clearStamps, stamps: processedStamps });
   <div class="passport-wrapper">
     <!-- Player Label -->
     <div v-if="playerName" class="player-label">
-      <span class="player-emoji">{{ playerEmoji }}</span>
+      <div v-if="character" class="player-face">
+        <GameToken :type="character" />
+      </div>
       <span class="player-name">{{ playerName }}</span>
     </div>
 
@@ -247,6 +250,7 @@ defineExpose({ clearStamps, stamps: processedStamps });
   align-items: center;
   gap: 8px;
   user-select: none;
+  flex-shrink: 0;
 }
 
 .player-label {
@@ -260,10 +264,20 @@ defineExpose({ clearStamps, stamps: processedStamps });
   border: 1px solid rgba(0,0,0,0.05);
   transform: translateY(-5px);
   z-index: 20;
+  flex-shrink: 0;
 }
 
-.player-emoji {
-  font-size: 1.2rem;
+.player-face {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+:deep(.player-face .token-pedestal), 
+:deep(.player-face .token-shadow) {
+  display: none !important;
 }
 
 .player-name {
@@ -286,6 +300,7 @@ defineExpose({ clearStamps, stamps: processedStamps });
   box-shadow: 
     0 10px 30px rgba(0, 0, 0, 0.2),
     0 2px 5px rgba(0, 0, 0, 0.1);
+  flex-shrink: 0;
 }
 
 .column {

@@ -1,8 +1,14 @@
 <script setup lang="ts">
 import { computed } from 'vue'
+import GameToken from './GameToken.vue'
 
 const props = defineProps<{
-  players: Array<{ name: string; money: number; properties: any[] }>;
+  players: Array<{ 
+    name: string; 
+    money: number; 
+    properties: any[]; 
+    character: 'seal' | 'capybara' | 'cat' | 'dog' 
+  }>;
   selectorIdx: number;
   action: string;
   username: string;
@@ -43,8 +49,9 @@ const actionText = computed(() => {
   <div class="modal-overlay">
     <div class="modal-content selection-modal">
       <div class="modal-header">
+        <div class="header-icon">🎯</div>
         <h2>{{ title }}</h2>
-        <div class="subtitle">Choose a player to {{ actionText }}</div>
+        <div class="subtitle">Choose a player to <span class="action-highlight">{{ actionText }}</span></div>
       </div>
       
       <div class="players-grid">
@@ -55,8 +62,9 @@ const actionText = computed(() => {
           @click="emit('select', player.name)"
         >
           <div class="player-avatar">
-             <!-- Placeholder for character icon if needed -->
-             <div class="avatar-circle">{{ player.name.charAt(0).toUpperCase() }}</div>
+             <div class="token-container">
+                <GameToken :type="player.character" />
+             </div>
           </div>
           <div class="player-info">
             <div class="name">{{ player.name }}</div>
@@ -66,7 +74,7 @@ const actionText = computed(() => {
               <span class="stamps">{{ player.properties.length }} stamps</span>
             </div>
           </div>
-          <div class="action-hint">SELECT</div>
+          <div class="select-btn">SELECT</div>
         </div>
       </div>
     </div>
@@ -80,102 +88,107 @@ const actionText = computed(() => {
   left: 0;
   width: 100%;
   height: 100%;
-  background: rgba(0, 0, 0, 0.85);
-  backdrop-filter: blur(8px);
+  background: rgba(0, 0, 0, 0.9); /* Solid opaque black for zero render cost */
   display: flex;
   align-items: center;
   justify-content: center;
-  z-index: 1000;
-  animation: fadeIn 0.3s ease-out;
+  z-index: 2000;
 }
 
 .modal-content {
-  background: linear-gradient(135deg, #1e1e2e 0%, #11111b 100%);
-  border: 2px solid rgba(255, 255, 255, 0.1);
-  border-radius: 24px;
-  padding: 40px;
-  width: 100%;
-  max-width: 500px;
-  box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
-  animation: scaleIn 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  background: #0d1b31; /* Solid background is faster than gradients + filters */
+  border: 1px solid rgba(255, 215, 0, 0.3);
+  border-radius: 28px;
+  padding: 35px;
+  width: 90%;
+  max-width: 480px;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.4);
 }
 
 .modal-header {
   text-align: center;
-  margin-bottom: 32px;
+  margin-bottom: 30px;
+}
+
+.header-icon {
+  font-size: 2.5rem;
+  margin-bottom: 10px;
 }
 
 h2 {
-  color: #f5c2e7;
-  font-size: 2.5rem;
-  margin: 0 0 8px 0;
+  font-family: 'Oswald', sans-serif;
+  color: #FFD700;
+  font-size: 2.2rem;
+  margin: 0 0 10px 0;
   text-transform: uppercase;
-  letter-spacing: 2px;
-  text-shadow: 0 0 20px rgba(245, 194, 231, 0.3);
+  letter-spacing: 3px;
+  text-shadow: 0 2px 10px rgba(255, 215, 0, 0.2);
 }
 
 .subtitle {
-  color: #a6adc8;
-  font-size: 1.1rem;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 1.05rem;
+}
+
+.action-highlight {
+  color: #fff;
+  font-weight: 600;
 }
 
 .players-grid {
   display: flex;
   flex-direction: column;
-  gap: 16px;
+  gap: 14px;
 }
 
 .player-card {
   display: flex;
   align-items: center;
-  padding: 20px;
-  background: rgba(255, 255, 255, 0.03);
-  border: 1px solid rgba(255, 255, 255, 0.05);
-  border-radius: 16px;
+  padding: 16px 20px;
+  background: #13243d;
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  border-radius: 18px;
   cursor: pointer;
-  transition: all 0.2s ease;
+  transition: transform 0.1s ease;
   position: relative;
-  overflow: hidden;
 }
 
 .player-card:hover {
-  background: rgba(255, 255, 255, 0.08);
-  border-color: #f5c2e7;
-  transform: translateX(8px);
+  background: rgba(255, 215, 0, 0.1);
+  transform: translateY(-2px);
 }
 
 .player-avatar {
-  margin-right: 20px;
+  margin-right: 18px;
+  flex-shrink: 0;
 }
 
-.avatar-circle {
-  width: 50px;
-  height: 50px;
-  background: #313244;
+.token-container {
+  width: 54px;
+  height: 54px;
+  background: #1a2a44;
   border-radius: 50%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  font-size: 1.5rem;
-  font-weight: bold;
-  color: #cdd6f4;
-  border: 2px solid rgba(255, 255, 255, 0.1);
+  padding: 6px;
+  border: 1px solid rgba(255, 255, 255, 0.1);
 }
+/* Removed :deep selectors that can be slow */
 
 .player-info {
   flex: 1;
 }
 
 .name {
-  font-size: 1.4rem;
+  font-family: 'Oswald', sans-serif;
+  font-size: 1.3rem;
   font-weight: 600;
-  color: #f5f5f7;
-  margin-bottom: 4px;
+  color: #fff;
+  margin-bottom: 2px;
+  letter-spacing: 0.5px;
 }
 
 .stats {
-  font-size: 1rem;
-  color: #9399b2;
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.5);
 }
 
 .separator {
@@ -184,21 +197,28 @@ h2 {
 }
 
 .money {
-  color: #a6e3a1;
-  font-weight: 600;
+  color: #FFD700;
+  font-weight: 700;
 }
 
-.action-hint {
-  font-size: 0.8rem;
-  font-weight: 800;
-  color: #f5c2e7;
+.select-btn {
+  font-family: 'Oswald', sans-serif;
+  font-size: 0.85rem;
+  font-weight: 700;
+  color: #FFD700;
+  background: rgba(255, 215, 0, 0.1);
+  padding: 6px 14px;
+  border-radius: 10px;
+  border: 1px solid rgba(255, 215, 0, 0.2);
   letter-spacing: 1px;
-  opacity: 0;
-  transition: opacity 0.2s ease;
+  opacity: 0.7;
+  transition: all 0.2s ease;
 }
 
-.player-card:hover .action-hint {
+.player-card:hover .select-btn {
   opacity: 1;
+  background: #FFD700;
+  color: #0c1828;
 }
 
 @keyframes fadeIn {
@@ -206,8 +226,8 @@ h2 {
   to { opacity: 1; }
 }
 
-@keyframes scaleIn {
-  from { opacity: 0; transform: scale(0.9); }
-  to { opacity: 1; transform: scale(1); }
+@keyframes modalPop {
+  0% { transform: scale(0.9) translateY(20px); opacity: 0; }
+  100% { transform: scale(1) translateY(0); opacity: 1; }
 }
 </style>

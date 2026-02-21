@@ -96,14 +96,13 @@ const displayEntries = computed(() => {
 <style scoped>
 .activity-log {
   margin-top: 12px;
-  background: rgba(15, 23, 42, 0.85);
-  backdrop-filter: blur(12px);
+  background: #0d1628; /* Solid background for performance */
   border: 1px solid rgba(148, 163, 184, 0.15);
-  border-radius: 10px;
-  padding: 8px 10px;
-  max-width: 260px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  max-width: 300px; /* Wider */
   width: 100%;
-  box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
 
 .log-header {
@@ -127,8 +126,8 @@ const displayEntries = computed(() => {
 .log-entries {
   display: flex;
   flex-direction: column;
-  gap: 2px;
-  max-height: 120px; 
+  gap: 4px;
+  max-height: 140px; /* Perfect height to fit ~3 detailed entries as seen in screenshot */
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.2) transparent;

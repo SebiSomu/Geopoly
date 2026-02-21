@@ -10,7 +10,7 @@ const props = defineProps<Props>()
 
 const tokenData = computed(() => {
   switch (props.type) {
-    case 'seal': return { emoji: null, color: '#E0E0E0' }
+    case 'seal': return { emoji: null, color: '#B0BEC5' }
     case 'cat': return { emoji: '🐱', color: '#FFB74D' }
     case 'dog': return { emoji: '🐶', color: '#B08D57' }
     case 'capybara': return { emoji: null, color: '#8D6E63' }
@@ -28,29 +28,28 @@ const tokenData = computed(() => {
           <span class="emoji-face">{{ tokenData.emoji }}</span>
         </template>
         <template v-else-if="type === 'seal'">
-          <!-- Simple Seal Face SVG -->
+          <!-- Enlarged Seal Face SVG -->
           <svg viewBox="0 0 24 24" class="token-svg">
-            <circle cx="12" cy="13" r="8" fill="#E0E0E0" />
-            <circle cx="9" cy="12" r="1.2" fill="#333" />
-            <circle cx="15" cy="12" r="1.2" fill="#333" />
-            <ellipse cx="12" cy="16" rx="3.5" ry="2.5" fill="#F5F5F5" />
-            <circle cx="12" cy="15.5" r="1" fill="#333" />
-            <!-- Whiskers -->
-            <path d="M8 16L5 15.5M8 16.5L5 17.5" stroke="#999" stroke-width="0.5" />
-            <path d="M16 16L19 15.5M16 16.5L19 17.5" stroke="#999" stroke-width="0.5" />
+            <circle cx="12" cy="12" r="10.5" fill="#E0E0E0" />
+            <circle cx="8.5" cy="11.5" r="1.5" fill="#333" />
+            <circle cx="15.5" cy="11.5" r="1.5" fill="#333" />
+            <ellipse cx="12" cy="16.5" rx="4.5" ry="3" fill="#F5F5F5" />
+            <circle cx="12" cy="16" r="1.2" fill="#333" />
+            <path d="M7.5 16.5L4 16M7.5 17L4 18.5" stroke="#999" stroke-width="0.6" />
+            <path d="M16.5 16.5L20 16M16.5 17L20 18.5" stroke="#999" stroke-width="0.6" />
           </svg>
         </template>
         <template v-else-if="type === 'capybara'">
-          <!-- Simple Capybara Face SVG -->
+          <!-- Enlarged Capybara Face SVG -->
           <svg viewBox="0 0 24 24" class="token-svg">
-            <path d="M4 14C4 10 7 7 12 7S20 10 20 14C20 18 17 21 12 21S4 18 4 14Z" fill="#A1887F" />
-            <path d="M11 7L7 5L9 8" fill="#A1887F" />
-            <path d="M13 7L17 5L15 8" fill="#A1887F" />
-            <rect x="8" y="12" width="2" height="1.5" rx="0.5" fill="#333" />
-            <rect x="14" y="12" width="2" height="1.5" rx="0.5" fill="#333" />
-            <ellipse cx="12" cy="17" rx="4" ry="3" fill="#8D6E63" />
-            <circle cx="10.5" cy="16" r="1" fill="#333" />
-            <circle cx="13.5" cy="16" r="1" fill="#333" />
+            <path d="M2 13C2 8 6 5 12 5S22 8 22 13C22 18 18 21 12 21S2 18 2 13Z" fill="#A1887F" />
+            <path d="M10.5 5.5L5 3.5L7 7" fill="#A1887F" />
+            <path d="M13.5 5.5L19 3.5L17 7" fill="#A1887F" />
+            <rect x="7" y="11" width="3" height="2" rx="0.5" fill="#333" />
+            <rect x="14" y="11" width="3" height="2" rx="0.5" fill="#333" />
+            <ellipse cx="12" cy="17" rx="5" ry="4" fill="#8D6E63" />
+            <circle cx="10.5" cy="16" r="1.2" fill="#333" />
+            <circle cx="13.5" cy="16" r="1.2" fill="#333" />
           </svg>
         </template>
       </div>
@@ -62,12 +61,11 @@ const tokenData = computed(() => {
 <style scoped>
 .game-token {
   position: relative;
-  width: 28px;
-  height: 28px;
+  width: 32px;
+  height: 32px;
   display: flex;
   align-items: center;
   justify-content: center;
-  filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3));
   transition: all 0.3s cubic-bezier(0.175, 0.885, 0.32, 1.275);
   cursor: pointer;
   z-index: 20;
@@ -98,38 +96,21 @@ const tokenData = computed(() => {
 }
 
 .emoji-face {
-  font-size: 1.4rem;
+  font-size: 1.8rem;
   line-height: 1;
-  filter: drop-shadow(0 1px 1px rgba(0,0,0,0.2));
 }
 
 .token-svg {
-  width: 22px;
-  height: 22px;
-  filter: drop-shadow(0 1px 2px rgba(0,0,0,0.3));
+  width: 100%;
+  height: 100%;
+  padding: 1px;
 }
 
 .token-pedestal {
-  position: absolute;
-  bottom: 2px;
-  width: 22px;
-  height: 8px;
-  background: var(--token-color);
-  border-radius: 50%;
-  border: 1.5px solid rgba(255,255,255,0.4);
-  box-shadow: 
-    inset 0 -2px 4px rgba(0,0,0,0.3),
-    inset 0 2px 4px rgba(255,255,255,0.4);
+  display: none; /* Removed as per user request for face-only design */
 }
 
 .token-shadow {
-  position: absolute;
-  bottom: -1px;
-  width: 24px;
-  height: 6px;
-  background: rgba(0,0,0,0.5);
-  border-radius: 50%;
-  filter: blur(2px);
-  z-index: 1;
+  display: none; /* Removed as per user request for face-only design */
 }
 </style>

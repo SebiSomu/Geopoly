@@ -775,7 +775,77 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 
 <template>
   <div class="game-layout">
-    <div class="board-container">
+  <!-- Right Side Player Info Panel (Now Left Side) -->
+  <div class="economy-panel">
+      <div class="panel-header">
+        <h2>💰 World Bank</h2>
+      </div>
+      
+      <!-- Global Money List -->
+      <div class="global-money-list">
+        <div 
+          v-for="(player, idx) in gameState.players" 
+          :key="'money-'+idx"
+          class="mini-player-card"
+          :class="{ 'me-gold': player.name === username }"
+        >
+          <div class="mini-info">
+            <div class="mini-token-box">
+              <GameToken :type="player.character" />
+            </div>
+            <span class="mini-name">{{ player.name }}</span>
+          </div>
+          <div class="mini-money-wrap">
+             <span class="mini-money">M{{ player.money }}</span>
+             <!-- Small floating animations within the card context -->
+             <TransitionGroup name="money-anim">
+               <span 
+                 v-for="note in gameState.moneyNotifications.filter(n => n.playerName === player.name)" 
+                 :key="note.id" 
+                 class="float-money"
+                 :class="note.type"
+               >
+                 {{ note.amount }}
+               </span>
+             </TransitionGroup>
+          </div>
+        </div>
+      </div>
+
+      <div class="portfolio-divider">
+        <h3>🏠 My Properties</h3>
+      </div>
+
+      <div class="my-portfolio">
+        <template v-for="player in gameState.players" :key="'props-'+player.name">
+          <div v-if="player.name === username" class="personal-props-area">
+            <!-- Mini Passport View -->
+            <div class="mini-passport-container">
+              <Passport 
+                :properties="player.properties"
+              />
+            </div>
+
+            <div v-if="!player.properties || player.properties.length === 0" class="no-props-box">
+              You don't own any properties yet.
+            </div>
+            <div class="props-grid">
+              <div 
+                v-for="(prop, pIdx) in player.properties" 
+                :key="pIdx"
+                class="prop-pill"
+              >
+                  <span class="prop-dot" :style="{ background: getColorStyle(prop.color) }"></span>
+                <span class="prop-label">{{ prop.name }}</span>
+              </div>
+            </div>
+          </div>
+        </template>
+      </div>
+
+  </div>
+
+  <div class="board-container">
     <div class="board">
       <!-- Top row -->
       <div class="board-row top-row">
@@ -957,7 +1027,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                 v-if="getPlayerByZone('top-left')"
                 :properties="getPlayerByZone('top-left')?.properties"
                 :player-name="getPlayerByZone('top-left')?.name"
-                :player-emoji="getCharacterEmoji(getPlayerByZone('top-left')?.character)"
+                :character="getPlayerByZone('top-left')?.character"
               />
             </div>
           </div>
@@ -969,7 +1039,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                 v-if="getPlayerByZone('top-right')"
                 :properties="getPlayerByZone('top-right')?.properties"
                 :player-name="getPlayerByZone('top-right')?.name"
-                :player-emoji="getCharacterEmoji(getPlayerByZone('top-right')?.character)"
+                :character="getPlayerByZone('top-right')?.character"
               />
             </div>
           </div>
@@ -1233,7 +1303,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                 v-if="getPlayerByZone('bottom-left')"
                 :properties="getPlayerByZone('bottom-left')?.properties"
                 :player-name="getPlayerByZone('bottom-left')?.name"
-                :player-emoji="getCharacterEmoji(getPlayerByZone('bottom-left')?.character)"
+                :character="getPlayerByZone('bottom-left')?.character"
               />
             </div>
           </div>
@@ -1245,7 +1315,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                 v-if="getPlayerByZone('bottom-right')"
                 :properties="getPlayerByZone('bottom-right')?.properties"
                 :player-name="getPlayerByZone('bottom-right')?.name"
-                :player-emoji="getCharacterEmoji(getPlayerByZone('bottom-right')?.character)"
+                :character="getPlayerByZone('bottom-right')?.character"
               />
             </div>
           </div>
@@ -1442,68 +1512,13 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
     </div>
   </div>
 
-  <!-- Right Side Player Info Panel -->
-  <div class="economy-panel">
+
+  <!-- Right Side Cards Panel -->
+  <div class="cards-panel">
       <div class="panel-header">
-        <h2>💰 World Bank</h2>
+        <h2>🃏 My Cards</h2>
       </div>
       
-      <!-- Global Money List -->
-      <div class="global-money-list">
-        <div 
-          v-for="(player, idx) in gameState.players" 
-          :key="'money-'+idx"
-          class="mini-player-card"
-          :class="{ 'me-gold': player.name === username }"
-        >
-          <div class="mini-info">
-            <div class="mini-token-box">
-              <GameToken :type="player.character" />
-            </div>
-            <span class="mini-name">{{ player.name }}</span>
-          </div>
-          <div class="mini-money-wrap">
-             <span class="mini-money">M{{ player.money }}</span>
-             <!-- Small floating animations within the card context -->
-             <TransitionGroup name="money-anim">
-               <span 
-                 v-for="note in gameState.moneyNotifications.filter(n => n.playerName === player.name)" 
-                 :key="note.id" 
-                 class="float-money"
-                 :class="note.type"
-               >
-                 {{ note.amount }}
-               </span>
-             </TransitionGroup>
-          </div>
-        </div>
-      </div>
-
-      <div class="portfolio-divider">
-        <h3>🏠 My Properties</h3>
-      </div>
-
-      <div class="my-portfolio">
-        <template v-for="player in gameState.players" :key="'props-'+player.name">
-          <div v-if="player.name === username" class="personal-props-area">
-            <div v-if="!player.properties || player.properties.length === 0" class="no-props-box">
-              You don't own any properties yet.
-            </div>
-            <div class="props-grid">
-              <div 
-                v-for="(prop, pIdx) in player.properties" 
-                :key="pIdx"
-                class="prop-pill"
-              >
-                  <span class="prop-dot" :style="{ background: getColorStyle(prop.color) }"></span>
-                <span class="prop-label">{{ prop.name }}</span>
-              </div>
-            </div>
-          </div>
-        </template>
-      </div>
-
-      <!-- Personal Player Hand -->
       <CardHand 
         v-if="myPlayerData"
         :code="code"
@@ -1512,17 +1527,17 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
         :chance-cards="myPlayerData.chanceCards"
         :is-my-turn="isMyTurn"
       />
-      <!-- New Reactive States: Target Selection and Dice Duel -->
-      <PlayerSelectionModal
-        v-if="gameState.targetSelection && gameState.targetSelection.selectorIdx === gameState.players.findIndex(p => p.name === username)"
-        :players="gameState.players"
-        :selectorIdx="gameState.targetSelection.selectorIdx"
-        :action="gameState.targetSelection.action"
-        :username="username"
-        @select="handleSelectTarget"
-      />
-
   </div>
+
+  <!-- Selection Modal (Overlay) -->
+  <PlayerSelectionModal
+    v-if="gameState.targetSelection && gameState.targetSelection.selectorIdx === gameState.players.findIndex(p => p.name === username)"
+    :players="gameState.players"
+    :selectorIdx="gameState.targetSelection.selectorIdx"
+    :action="gameState.targetSelection.action"
+    :username="username"
+    @select="handleSelectTarget"
+  />
 </div>
 </template>
 
@@ -1547,39 +1562,52 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 }
 
 .economy-panel {
-  width: 320px;
-  background: rgba(16, 32, 54, 0.95);
-  border-left: 1px solid rgba(255, 215, 0, 0.3);
+  width: 280px;
+  background: #0c1828; /* Solid background, no blur filter */
+  border-right: 1px solid rgba(255, 215, 0, 0.3);
   display: flex;
   flex-direction: column;
-  padding: 24px 16px;
+  padding: 12px 10px;
   height: 100vh;
   box-sizing: border-box;
   overflow-y: auto;
-  box-shadow: -10px 0 30px rgba(0, 0, 0, 0.5);
-  backdrop-filter: blur(10px);
+  box-shadow: 5px 0 20px rgba(0, 0, 0, 0.3);
+}
+
+.cards-panel {
+  width: 220px;
+  background: rgba(12, 24, 40, 0.98);
+  border-left: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  flex-direction: column;
+  padding: 12px 10px;
+  height: 100vh;
+  box-sizing: border-box;
+  overflow-y: auto;
+  box-shadow: -5px 0 20px rgba(0, 0, 0, 0.3);
 }
 
 .panel-header h2 {
   font-family: 'Oswald', sans-serif;
   color: #FFD700;
   text-align: center;
-  margin-bottom: 24px;
+  margin-bottom: 8px;
   letter-spacing: 2px;
   text-transform: uppercase;
+  font-size: 1.1rem;
 }
 
 .global-money-list {
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  margin-bottom: 24px;
+  gap: 8px;
+  margin-bottom: 16px;
 }
 
 .mini-player-card {
   background: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  padding: 10px 14px;
+  border-radius: 6px;
+  padding: 4px 8px;
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -1597,7 +1625,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 .mini-info {
   display: flex;
   align-items: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .mini-token-box {
@@ -1608,7 +1636,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 
 .mini-name {
   font-family: 'Oswald', sans-serif;
-  font-size: 16px;
+  font-size: 14px;
   color: white;
   letter-spacing: 0.5px;
 }
@@ -1621,7 +1649,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 
 .mini-money {
   font-family: 'Roboto', sans-serif;
-  font-size: 18px;
+  font-size: 16px;
   color: #FFD700;
   font-weight: 700;
 }
@@ -1635,15 +1663,25 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 
 .portfolio-divider h3 {
   font-family: 'Oswald', sans-serif;
-  color: #FFD700;
-  font-size: 14px;
+  color: #fbbf24;
+  font-size: 0.8rem;
   text-transform: uppercase;
-  letter-spacing: 1.5px;
+  letter-spacing: 0.1em;
   margin: 0;
 }
 
 .personal-props-area {
+  margin-bottom: 10px;
   width: 100%;
+}
+
+.mini-passport-container {
+  display: flex;
+  justify-content: center;
+  margin: 20px 0 10px 0; 
+  transform: scale(0.75); 
+  transform-origin: top center;
+  height: 240px; /* Scaled height of body only (320 * 0.75) */
 }
 
 .no-props-box {

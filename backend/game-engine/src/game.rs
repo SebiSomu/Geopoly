@@ -67,6 +67,15 @@ pub struct TurnResult {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PurchaseRecord {
+    pub dest_id: u8,
+    pub buyer_idx: usize,
+    pub price: u32,
+    pub name: String,
+    pub is_first_class: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Game {
     pub board: Board,
     pub players: Vec<Player>,
@@ -80,6 +89,7 @@ pub struct Game {
     pub last_dice: Option<(u8, u8)>,
     pub history: Vec<GameAction>,
     pub activity_log: Vec<ActivityLogEntry>,
+    pub last_purchase: Option<PurchaseRecord>,
 }
 
 impl Game {
@@ -112,6 +122,7 @@ impl Game {
             last_dice: None,
             history: Vec::new(),
             activity_log: Vec::new(),
+            last_purchase: None,
         }
     }
 
@@ -277,12 +288,12 @@ impl Game {
 
                 // If a decision is pending, turn stops for input but doesn't technically end (still same player's turn context)
                 let pending_decision = matches!(self.step, 
-                    GameStep::WaitingForTargetSelection { .. } | GameStep::WaitingForDiceDuel { .. } | GameStep::WaitingForPurchaseDecision { .. } | 
+                    GameStep::WaitingForTargetSelection { .. } |
+                    GameStep::WaitingForDiceDuel { .. } |
+                    GameStep::WaitingForPurchaseDecision { .. } | 
                     GameStep::WaitingForFirstClassDecision { .. } |
                     GameStep::WaitingForAirportDecision { .. } |
                     GameStep::WaitingForAirportDestination { .. } |
-                    GameStep::WaitingForTargetSelection { .. } |
-                    GameStep::WaitingForDiceDuel { .. } |
                     GameStep::WaitingForAuction { .. }
                 );
                 
@@ -567,37 +578,22 @@ impl Game {
                 _ => return Err("Not waiting for purchase decision".to_string()),
             };
 
-            let mut player_idx = buyer_idx; // Use the buyer_idx from the state
+            let player_idx = buyer_idx; // Use the buyer_idx from the state
 
             if buy {
-                // ✅ FIX: Verificăm dacă cineva vrea să intercepteze cumpărarea
-                let mut interceptor_idx: Option<usize> = None;
-                for i in 0..self.players.len() {
-                    if i != buyer_idx && self.players[i].intercept_purchase_ready {
-                        if self.players[i].money >= price {
-                            println!("{}", format!("🎯 {} INTERCEPTEAZĂ cumpărarea!", self.players[i].name).bright_magenta());
-                            interceptor_idx = Some(i);
-                            self.players[i].intercept_purchase_ready = false;
-
-                            // Găsim și ștergem cardul din mână
-                            if let Some(pos) = self.players[i].here_and_now_cards.iter().position(|c| matches!(c.action, HereAndNowCardAction::InterceptPurchase)) {
-                                let card = self.players[i].here_and_now_cards.remove(pos);
-                                self.here_and_now_deck.discard(card);
-                            }
-                            break;
-                        }
-                    }
-                }
-
-                // Schimbăm cumpărătorul dacă cineva a interceptat
-                if let Some(idx) = interceptor_idx {
-                    player_idx = idx;
-                }
-
                 // Găsește destinația pentru a crea ștampila
                 if let Some(dest) = self.board.find_destination_by_id(dest_id) {
                     let dest = dest.clone();
                     if self.players[player_idx].pay_money(price) {
+                        // Înregistrăm achiziția pentru interceptare ulterioară
+                        self.last_purchase = Some(PurchaseRecord {
+                            dest_id,
+                            buyer_idx: player_idx,
+                            price,
+                            name: dest.name.clone(),
+                            is_first_class: false,
+                        });
+
                         // Record Payment
                         self.history.push(GameAction::Payment {
                             from: Some(player_idx),
@@ -605,10 +601,6 @@ impl Game {
                             amount: price
                         });
 
-                        if interceptor_idx.is_some() {
-                            println!("{}", format!("✅ {} a interceptat și cumpărat {} pentru M{}!",
-                                     self.players[player_idx].name, dest.name, price).bright_green());
-                        }
 
                         // Cumpărarea proprietății (include verificare set și win)
                         if self.acquire_property(player_idx, &dest) {
@@ -675,6 +667,15 @@ impl Game {
 
             if buy {
                 if self.players[player_idx].pay_money(100) {
+                    // Înregistrăm achiziția pentru interceptare ulterioară
+                    self.last_purchase = Some(PurchaseRecord {
+                        dest_id: 0, // Id fictiv pentru First Class
+                        buyer_idx: player_idx,
+                        price: 100,
+                        name: "First Class".to_string(),
+                        is_first_class: true,
+                    });
+
                     // Record Payment
                     self.history.push(GameAction::Payment {
                         from: Some(player_idx),
@@ -1003,7 +1004,11 @@ impl Game {
         let turn_ends = match self.step {
              GameStep::WaitingForTargetSelection { .. } |
              GameStep::WaitingForDiceDuel { .. } |
-             GameStep::WaitingForPurchaseDecision { .. } | GameStep::WaitingForFirstClassDecision { .. } | GameStep::WaitingForAirportDecision { .. } | GameStep::WaitingForAirportDestination { .. } | GameStep::WaitingForTargetSelection { .. } | GameStep::WaitingForDiceDuel { .. } | GameStep::WaitingForForcedDeal => false,
+             GameStep::WaitingForPurchaseDecision { .. } | 
+             GameStep::WaitingForFirstClassDecision { .. } | 
+             GameStep::WaitingForAirportDecision { .. } | 
+             GameStep::WaitingForAirportDestination { .. } | 
+             GameStep::WaitingForForcedDeal => false,
              _ => false // Usually using a card doesn't end turn unless it was the main action, but here we assume it's additive?
              // Actually, use_here_and_now can be used out of turn.
         };
@@ -1094,27 +1099,16 @@ impl Game {
                 }
             }
             HereAndNowCardAction::InterceptPurchase => {
-                self.players[player_idx].intercept_purchase_ready = true;
+                let purchase_data = self.last_purchase.clone();
                 
-                // ✅ REACTIV: Dacă cineva TOCMAI a cumpărat ceva, îi luăm locul retroactiv
-                let purchase_data = self.history.iter().rev().take(10).find_map(|action| {
-                    if let GameAction::StampTransfer { from: None, to, stamp_name, .. } = action {
-                         if *to != player_idx {
-                             // Găsim și plata corespunzătoare pentru a vedea prețul
-                             let amount = self.history.iter().rev().take(10).find_map(|a| {
-                                 if let GameAction::Payment { from, to: None, amount } = a {
-                                     if from == &Some(*to) { Some(*amount) } else { None }
-                                 } else { None }
-                             });
-                             if let Some(price) = amount {
-                                 return Some((*to, stamp_name.clone(), price));
-                             }
-                         }
+                if let Some(record) = purchase_data {
+                    if record.buyer_idx == player_idx {
+                        return Err("Nu poți intercepta propria cumpărare!".to_string());
                     }
-                    None
-                });
-
-                if let Some((old_buyer_idx, stamp_name, price)) = purchase_data {
+                    
+                    let price = record.price;
+                    let old_buyer_idx = record.buyer_idx;
+                    let stamp_name = record.name.clone();
                     // Verificăm dacă eu am bani să-l cumpăr
                     if self.players[player_idx].pay_money(price) {
                         // Refundăm vechiul cumpărător
@@ -1124,22 +1118,26 @@ impl Game {
                         if let Some(pos) = self.players[old_buyer_idx].passport.find_stamp_index(&stamp_name) {
                             if let Some(stamp) = self.players[old_buyer_idx].passport.remove_stamp_at(pos) {
                                 self.add_stamp_with_checks(player_idx, stamp);
-                                println!("🎯 INTERCEPT REACTIV! {} a preluat '{}' de la {} pentru M{}!", 
+                                println!("🎯 INTERCEPT! {} a preluat '{}' de la {} pentru M{}!", 
                                          self.players[player_idx].name, stamp_name, self.players[old_buyer_idx].name, price);
                                 
                                 self.history.push(GameAction::Payment { from: Some(player_idx), to: None, amount: price });
                                 self.history.push(GameAction::Payment { from: None, to: Some(old_buyer_idx), amount: price });
 
-                                self.players[player_idx].intercept_purchase_ready = false;
-                                // Găsim și ștergem cardul din mână
-                                if let Some(pos_card) = self.players[player_idx].here_and_now_cards.iter().position(|c| matches!(c.action, HereAndNowCardAction::InterceptPurchase)) {
-                                    let card = self.players[player_idx].here_and_now_cards.remove(pos_card);
-                                    self.here_and_now_deck.discard(card);
-                                }
+                                self.log_action(Some(player_idx), format!("{} intercepted {} from {}", self.players[player_idx].name, stamp_name, self.players[old_buyer_idx].name));
+
+                                self.last_purchase = None;
                                 return Ok(());
                             }
                         }
+                        self.players[player_idx].add_money(price);
+                        self.players[old_buyer_idx].pay_money(price);
+                        return Err("Proprietatea nu mai este în pașaportul cumpărătorului original.".to_string());
+                    } else {
+                        return Err("Nu ai suficienți bani pentru interceptare!".to_string());
                     }
+                } else {
+                    return Err("Nicio achiziție recentă de interceptat.".to_string());
                 }
             },
             HereAndNowCardAction::SayNo => {
@@ -1764,7 +1762,7 @@ impl Game {
             println!("\n{}", "Această destinație nu este deținută de nimeni!".cyan());
 
             let mut final_price = dest.price;
-            let mut buyer_idx = player_idx;
+            let buyer_idx = player_idx;
 
             // ✅ DISCOUNT PURCHASE: plătești doar M100
             if self.players[player_idx].discount_purchase_ready {
@@ -1850,8 +1848,7 @@ impl Game {
                 println!("{}", "✅ Ai primit 'Spune nu!' (îl poți folosi oricând).".bright_green());
             }
             HereAndNowCardAction::InterceptPurchase => {
-                self.players[player_idx].intercept_purchase_ready = true;
-                println!("{}", "✅ Intercept Purchase este ACTIV (când altcineva cumpără, îl poți intercepta).".bright_green());
+                println!("{}", "✅ Intercept Purchase păstrat în mână. Îl poți folosi pentru a fura ultima proprietate cumpărată!".bright_green());
             }
             HereAndNowCardAction::DiscountPurchase => {
                 self.players[player_idx].discount_purchase_ready = true;
