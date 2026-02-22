@@ -217,6 +217,13 @@ fn sync_lobby_state(players: &mut Vec<Player>, game: &Game) {
                 id: c.id.clone(),
                 description: c.description.clone(),
             }).collect();
+
+            // Calculate reactive cards availability
+            let engine_player_idx = game.players.iter().position(|p| p.name == engine_player.name).unwrap_or(0);
+            server_player.can_use_say_no = game.check_can_player_say_no(engine_player_idx);
+            server_player.can_use_discount = game.check_can_player_use_discount(engine_player_idx);
+            server_player.can_use_intercept = game.check_can_player_use_intercept(engine_player_idx);
+            server_player.can_use_collect_tax = game.check_can_player_use_collect_tax(engine_player_idx);
         }
     }
 }
@@ -299,7 +306,7 @@ impl MutationRoot {
         let user_opt = db.find_user_by_username(&username).await?;
 
         match user_opt {
-            Some(mut user) => {
+            Some(user) => {
                 if user.password_hash != password {
                     return Err(Error::new("Invalid password"));
                 }
@@ -328,6 +335,10 @@ impl MutationRoot {
                 properties: Vec::new(),
                 here_and_now_cards: Vec::new(),
                 chance_cards: Vec::new(),
+                can_use_say_no: false,
+                can_use_discount: false,
+                can_use_intercept: false,
+                can_use_collect_tax: false,
             }],
             host: username,
             state: "waiting".to_string(),
@@ -367,7 +378,11 @@ impl MutationRoot {
                  properties: Vec::new(),
                  here_and_now_cards: Vec::new(),
                  chance_cards: Vec::new(),
-             };
+                  can_use_say_no: false,
+                  can_use_discount: false,
+                  can_use_intercept: false,
+                  can_use_collect_tax: false,
+              };
              lobby.players.push(new_player.clone());
              
              db.lobbies().update_one(

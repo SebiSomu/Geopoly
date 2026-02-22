@@ -4,11 +4,14 @@ import { useMutation } from '@vue/apollo-composable';
 import { USE_CARD_MUTATION } from '../graphql/operations';
 
 const props = defineProps<{
-  code: String;
-  username: String;
+  code: string;
+  username: string;
   hereAndNowCards: any[];
   chanceCards: any[];
   isMyTurn: boolean;
+  inJail: boolean;
+  propertyCount: number;
+  players: any[];
 }>();
 
 const emit = defineEmits(['refresh']);
@@ -29,6 +32,86 @@ const useCard = async (cardId: string) => {
     console.error("Failed to use card:", e);
   }
 };
+
+const getCardStatus = (card: any) => {
+  const desc = card.description.toLowerCase();
+  
+  // Movement cards
+  if (desc.includes('advance 5 spaces') || desc.includes('go to any space')) {
+    if (!props.isMyTurn) return { playable: false, hint: 'Not your turn' };
+  }
+
+  // Jail cards
+  if (desc.includes('out of jail')) {
+    if (!props.inJail) return { playable: false, hint: 'Not in jail' };
+  }
+
+  // Swap cards / Take all stamps
+  if (desc.includes('swap your last stamp') || desc.includes('swap their last stamps') || desc.includes('take the last stamp from all')) {
+    const hasOthersWithStamps = props.players.some(p => p.username !== props.username && p.properties.length > 0);
+    if (!hasOthersWithStamps) return { playable: false, hint: 'No stamps to take/swap' };
+    
+    // For personal swap, also need own stamps
+    if (desc.includes('swap your last stamp') && props.propertyCount === 0) {
+      return { playable: false, hint: 'No stamps to swap' };
+    }
+  }
+
+  // Richest player
+  if (desc.includes('player with the most stamps pays you')) {
+    const opponentStamps = props.players
+      .filter(p => p.username !== props.username)
+      .map(p => p.properties.length);
+    const maxOpponentStamps = opponentStamps.length > 0 ? Math.max(...opponentStamps) : 0;
+    
+    if (maxOpponentStamps === 0) return { playable: false, hint: 'No one has stamps' };
+    if (maxOpponentStamps <= props.propertyCount) return { playable: false, hint: 'You are the richest' };
+  }
+
+  // Just Say No
+  if (desc.includes('counter another player\'s action') || desc.includes('just say no')) {
+    const me = props.players.find(p => p.username === props.username);
+    if (me && !me.canUseSayNo) {
+      return { playable: false, hint: 'Nothing to cancel' };
+    }
+  }
+
+  // Intercept Purchase
+  if (desc.includes('intercept the last property purchased')) {
+    const me = props.players.find(p => p.username === props.username);
+    if (me && !me.canUseIntercept) {
+      return { playable: false, hint: 'No recent purchase by others' };
+    }
+  }
+
+  // Discount Purchase (M100)
+  if (desc.includes('pay only m100 for that space')) {
+    const me = props.players.find(p => p.username === props.username);
+    if (me && !me.canUseDiscount) {
+      return { playable: false, hint: 'Not applicable now' };
+    }
+  }
+
+  // Collect Tax
+  if (desc.includes('collect a tourist tax instead of paying')) {
+    const me = props.players.find(p => p.username === props.username);
+    if (me && !me.canUseCollectTax) {
+      return { playable: false, hint: 'No recent payment to player' };
+    }
+  }
+
+  return { playable: true, hint: 'Tap to play' };
+}
+
+const formatHnDescription = (desc: string) => {
+  const lower = desc.toLowerCase();
+  if (lower.includes('advance 5 spaces') || lower.includes('go to any space on the board')) {
+    // Remove trailing dot if exists
+    const trimmed = desc.trim().replace(/\.$/, '');
+    return `${trimmed} in this round`;
+  }
+  return desc;
+};
 </script>
 
 <template>
@@ -41,15 +124,19 @@ const useCard = async (cardId: string) => {
       <div 
         v-for="card in hereAndNowCards" 
         :key="card.id" 
-        class="compact-card-row can-play" 
-        @click="useCard(card.id)"
+        class="compact-card-row"
+        :class="{ 
+          'can-play': getCardStatus(card).playable,
+          'disabled': !getCardStatus(card).playable 
+        }" 
+        @click="getCardStatus(card).playable && useCard(card.id)"
       >
         <div class="mini-card hn-mini">
             <span class="mini-card-text">HERE&NOW</span>
         </div>
         <div class="compact-card-info">
-            <p class="compact-desc">{{ card.description }}</p>
-            <span class="play-hint">Tap to play</span>
+            <p class="compact-desc">{{ formatHnDescription(card.description) }}</p>
+            <span class="play-hint">{{ getCardStatus(card).hint }}</span>
         </div>
       </div>
 
@@ -57,15 +144,19 @@ const useCard = async (cardId: string) => {
       <div 
         v-for="card in chanceCards" 
         :key="card.id" 
-        class="compact-card-row can-play" 
-        @click="useCard(card.id)"
+        class="compact-card-row"
+        :class="{ 
+          'can-play': getCardStatus(card).playable,
+          'disabled': !getCardStatus(card).playable 
+        }" 
+        @click="getCardStatus(card).playable && useCard(card.id)"
       >
         <div class="mini-card chance-mini">
             <span class="mini-card-text">CHANCE</span>
         </div>
         <div class="compact-card-info">
             <p class="compact-desc">{{ card.description }}</p>
-            <span class="play-hint" v-if="isMyTurn">Tap to play</span>
+            <span class="play-hint">{{ getCardStatus(card).hint }}</span>
         </div>
       </div>
     </div>
@@ -125,6 +216,18 @@ const useCard = async (cardId: string) => {
   background: rgba(30, 41, 59, 0.8);
   border-color: rgba(251, 191, 36, 0.3);
   transform: translateX(4px);
+}
+
+.compact-card-row.disabled {
+  opacity: 0.5;
+  filter: grayscale(0.5);
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+.compact-card-row.disabled .play-hint {
+  color: #ef4444;
+  opacity: 0.9;
 }
 
 .mini-card {

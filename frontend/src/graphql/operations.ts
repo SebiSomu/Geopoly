@@ -145,6 +145,10 @@ export const GET_LOBBY_QUERY = gql`
           id
           description
         }
+        canUseSayNo
+        canUseDiscount
+        canUseIntercept
+        canUseCollectTax
       }
     }
   }

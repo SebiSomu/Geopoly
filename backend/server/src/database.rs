@@ -5,6 +5,7 @@ use crate::model::{User, Lobby};
 
 #[derive(Clone)]
 pub struct DB {
+    #[allow(dead_code)]
     pub client: Client,
     pub db: Database,
 }

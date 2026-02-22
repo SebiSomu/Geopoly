@@ -66,8 +66,8 @@ const tokenData = computed(() => {
 <style scoped>
 .game-token {
   position: relative;
-  width: 32px;
-  height: 32px;
+  width: var(--token-size, 32px);
+  height: var(--token-size, 32px);
   display: flex;
   align-items: center;
   justify-content: center;

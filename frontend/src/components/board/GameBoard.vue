@@ -44,25 +44,61 @@ const { mutate: placeBidMutation } = useMutation(PLACE_BID_MUTATION);
 const { mutate: resolveAuctionMutation } = useMutation(RESOLVE_AUCTION_MUTATION);
 const { mutate: resolveJailDecisionMutation } = useMutation(RESOLVE_JAIL_DECISION_MUTATION);
 
+interface Property {
+  name: string;
+  color: string;
+  diameter: number;
+  column: 'left' | 'right';
+  destination_id?: number | null;
+}
+
+interface Player {
+  character: 'seal' | 'capybara' | 'cat' | 'dog';
+  position: number;
+  name: string;
+  in_jail: boolean;
+  consecutive_doubles: number;
+  money: number;
+  properties: Property[];
+  hereAndNowCards: Array<{ id: string; description: string }>;
+  chanceCards: Array<{ id: string; description: string }>;
+}
+
+interface GameState {
+  players: Player[];
+  currentTurnIndex: number;
+  diceValue1: number;
+  diceValue2: number;
+  isRolling: boolean;
+  forcedDealActive: boolean;
+  isMoving: boolean;
+  awaitingAction: boolean;
+  pendingPurchase: { destId: number; destName: string; price: number; buyerIdx: number } | null;
+  pendingFirstClass: { buyerIdx: number } | null;
+  pendingAirportDecision: { buyerIdx: number } | null;
+  pendingAirportDestination: { buyerIdx: number } | null;
+  isGameOver: boolean;
+  winnerName: string | null;
+  moneyNotifications: Array<{ id: number; amount: string; type: 'plus' | 'minus'; x: number; y: number; playerName: string }>;
+  pickingTarget: boolean;
+  targetSelection: { action: string; cardId: string | null; selectorIdx: number } | null;
+  diceDuel: {
+    challengerIdx: number;
+    targetIdx: number;
+    challengerDie1: number | null;
+    challengerDie2: number | null;
+    targetDie1: number | null;
+    targetDie2: number | null;
+  } | null;
+  pendingAuction: { destId: number; destName: string; currentBid: number; highestBidderIdx: number | null } | null;
+  auctionTimer: number;
+  activityLog: Array<{ playerIdx: number | null; message: string }>;
+  isJailDecision: boolean;
+}
+
 // Game simulation state (local representation of server state)
-const gameState = reactive({
-  players: [] as Array<{ 
-    character: 'seal' | 'capybara' | 'cat' | 'dog'; 
-    position: number; 
-    name: string;
-    in_jail: boolean;
-    consecutive_doubles: number;
-    money: number;
-    properties: Array<{ 
-      name: string; 
-      color: string;
-      diameter: number;
-      column: 'left' | 'right';
-      destination_id?: number | null;
-    }>;
-    hereAndNowCards: Array<{ id: string; description: string }>;
-    chanceCards: Array<{ id: string; description: string }>;
-  }>,
+const gameState = reactive<GameState>({
+  players: [],
   currentTurnIndex: 0,
   diceValue1: 1,
   diceValue2: 3,
@@ -70,26 +106,19 @@ const gameState = reactive({
   forcedDealActive: false,
   isMoving: false,
   awaitingAction: false,
-  pendingPurchase: null as { destId: number; destName: string; price: number; buyerIdx: number } | null,
-  pendingFirstClass: null as { buyerIdx: number } | null,
-  pendingAirportDecision: null as { buyerIdx: number } | null,
-  pendingAirportDestination: null as { buyerIdx: number } | null,
+  pendingPurchase: null,
+  pendingFirstClass: null,
+  pendingAirportDecision: null,
+  pendingAirportDestination: null,
   isGameOver: false,
-  winnerName: null as string | null,
-  moneyNotifications: [] as Array<{ id: number; amount: string; type: 'plus' | 'minus'; x: number; y: number; playerName: string }>,
+  winnerName: null,
+  moneyNotifications: [],
   pickingTarget: false,
-  targetSelection: null as { action: string; cardId: string | null; selectorIdx: number } | null,
-  diceDuel: null as { 
-    challengerIdx: number; 
-    targetIdx: number; 
-    challengerDie1: number | null; 
-    challengerDie2: number | null; 
-    targetDie1: number | null; 
-    targetDie2: number | null; 
-  } | null,
-  pendingAuction: null as { destId: number; destName: string; currentBid: number; highestBidderIdx: number | null } | null,
+  targetSelection: null,
+  diceDuel: null,
+  pendingAuction: null,
   auctionTimer: 0,
-  activityLog: [] as Array<{ playerIdx: number | null; message: string }>,
+  activityLog: [],
   isJailDecision: false,
 })
 
@@ -109,7 +138,7 @@ watch(() => gameState.pendingAuction, (newVal, oldVal) => {
   }
 
   // If new auction OR bid changed (currentBid changed), reset timer
-  if (!oldVal || newVal.currentBid !== oldVal.currentBid) {
+  if (!oldVal || newVal?.currentBid !== oldVal?.currentBid) {
     if (auctionInterval) clearInterval(auctionInterval);
     gameState.auctionTimer = 5; // 5 seconds
     
@@ -127,7 +156,7 @@ let notificationId = 0;
 
 // Sync local state with server data
 watchEffect(() => {
-  const res = result.value;
+  const res = result?.value;
   if (res?.getLobby) {
     const lobby = res.getLobby
     
@@ -241,22 +270,22 @@ const myHasJailFreeCard = computed(() => {
 
 const canBuy = computed(() => {
   if (!gameState.pendingPurchase) return false
-  return gameState.players[gameState.pendingPurchase.buyerIdx]?.name === username
+  return gameState.players[gameState.pendingPurchase?.buyerIdx!]?.name === username
 })
 
 const canBuyFirstClass = computed(() => {
   if (!gameState.pendingFirstClass) return false
-  return gameState.players[gameState.pendingFirstClass.buyerIdx]?.name === username
+  return gameState.players[gameState.pendingFirstClass?.buyerIdx!]?.name === username
 })
 
 const canFly = computed(() => {
   if (!gameState.pendingAirportDecision) return false
-  return gameState.players[gameState.pendingAirportDecision.buyerIdx]?.name === username
+  return gameState.players[gameState.pendingAirportDecision?.buyerIdx!]?.name === username
 })
 
 const canPickDestination = computed(() => {
   if (!gameState.pendingAirportDestination) return false
-  return gameState.players[gameState.pendingAirportDestination.buyerIdx]?.name === username
+  return gameState.players[gameState.pendingAirportDestination?.buyerIdx!]?.name === username
 })
 
 const myPlayerData = computed(() => {
@@ -685,8 +714,8 @@ const currentPlayer = computed(() => gameState.players[gameState.currentTurnInde
 
 // Get Auction Top Bidder Name safely
 const auctionTopBidder = computed(() => {
-  if (!gameState.pendingAuction || gameState.pendingAuction.highestBidderIdx === null || gameState.pendingAuction.highestBidderIdx === undefined) return 'No bids yet'
-  const player = gameState.players[gameState.pendingAuction.highestBidderIdx]
+  if (!gameState.pendingAuction || gameState.pendingAuction?.highestBidderIdx === null || gameState.pendingAuction?.highestBidderIdx === undefined) return 'No bids yet'
+  const player = gameState.players[gameState.pendingAuction?.highestBidderIdx!]
   return player ? player.name : 'Unknown'
 })
 
@@ -1209,22 +1238,22 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
               <div class="modal-buttons auction-buttons">
                 <button 
                   class="modal-btn bid" 
-                  @click="gameState.pendingAuction && handlePlaceBid(gameState.pendingAuction.currentBid + 20)"
-                  :disabled="!myPlayerData || !gameState.pendingAuction || myPlayerData.money < gameState.pendingAuction.currentBid + 20 || gameState.pendingAuction.highestBidderIdx === myPlayerIdx"
+                  @click="gameState.pendingAuction && handlePlaceBid(gameState.pendingAuction?.currentBid + 20)"
+                  :disabled="!myPlayerData || !gameState.pendingAuction || myPlayerData.money < (gameState.pendingAuction?.currentBid || 0) + 20 || gameState.pendingAuction?.highestBidderIdx === myPlayerIdx"
                 >
                   +20
                 </button>
                 <button 
                   class="modal-btn bid" 
-                  @click="gameState.pendingAuction && handlePlaceBid(gameState.pendingAuction.currentBid + 50)"
-                  :disabled="!myPlayerData || !gameState.pendingAuction || myPlayerData.money < gameState.pendingAuction.currentBid + 50 || gameState.pendingAuction.highestBidderIdx === myPlayerIdx"
+                  @click="gameState.pendingAuction && handlePlaceBid(gameState.pendingAuction?.currentBid + 50)"
+                  :disabled="!myPlayerData || !gameState.pendingAuction || myPlayerData.money < (gameState.pendingAuction?.currentBid || 0) + 50 || gameState.pendingAuction?.highestBidderIdx === myPlayerIdx"
                 >
                   +50
                 </button>
                 <button 
                   class="modal-btn bid" 
-                  @click="gameState.pendingAuction && handlePlaceBid(gameState.pendingAuction.currentBid + 100)"
-                  :disabled="!myPlayerData || !gameState.pendingAuction || myPlayerData.money < gameState.pendingAuction.currentBid + 100 || gameState.pendingAuction.highestBidderIdx === myPlayerIdx"
+                  @click="gameState.pendingAuction && handlePlaceBid(gameState.pendingAuction?.currentBid + 100)"
+                  :disabled="!myPlayerData || !gameState.pendingAuction || myPlayerData.money < (gameState.pendingAuction?.currentBid || 0) + 100 || gameState.pendingAuction?.highestBidderIdx === myPlayerIdx"
                 >
                   +100
                 </button>
@@ -1518,15 +1547,18 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
         :here-and-now-cards="myPlayerData.hereAndNowCards"
         :chance-cards="myPlayerData.chanceCards"
         :is-my-turn="isMyTurn"
+        :in-jail="myPlayerData.in_jail"
+        :property-count="myPlayerData.properties.length"
+        :players="gameState.players"
       />
   </div>
 
   <!-- Selection Modal (Overlay) -->
   <PlayerSelectionModal
-    v-if="gameState.targetSelection && gameState.targetSelection.selectorIdx === gameState.players.findIndex(p => p.name === username)"
+    v-if="gameState.targetSelection && gameState.targetSelection?.selectorIdx === gameState.players.findIndex(p => p.name === username)"
     :players="gameState.players"
-    :selectorIdx="gameState.targetSelection.selectorIdx"
-    :action="gameState.targetSelection.action"
+    :selectorIdx="gameState.targetSelection?.selectorIdx!"
+    :action="gameState.targetSelection?.action!"
     :username="username"
     @select="handleSelectTarget"
   />

@@ -168,8 +168,11 @@ h2 {
   height: 54px;
   background: #1a2a44;
   border-radius: 50%;
-  padding: 6px;
   border: 1px solid rgba(255, 255, 255, 0.1);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  --token-size: 44px;
 }
 /* Removed :deep selectors that can be slow */
 

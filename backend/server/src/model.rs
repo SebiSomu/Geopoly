@@ -51,6 +51,14 @@ pub struct Player {
     pub here_and_now_cards: Vec<GqlHereAndNowCard>,
     #[serde(default)]
     pub chance_cards: Vec<GqlChanceCard>,
+    #[serde(default)]
+    pub can_use_say_no: bool,
+    #[serde(default)]
+    pub can_use_discount: bool,
+    #[serde(default)]
+    pub can_use_intercept: bool,
+    #[serde(default)]
+    pub can_use_collect_tax: bool,
 }
 
 impl Default for Player {
@@ -65,6 +73,10 @@ impl Default for Player {
             properties: Vec::new(),
             here_and_now_cards: Vec::new(),
             chance_cards: Vec::new(),
+            can_use_say_no: false,
+            can_use_discount: false,
+            can_use_intercept: false,
+            can_use_collect_tax: false,
         }
     }
 }

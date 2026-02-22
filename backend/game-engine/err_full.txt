@@ -1,0 +1,32 @@
+﻿
+      Checking game-engine 
+v0.1.0 (C:\proiecte-vue\monop
+oly-world-edition\backend\gam
+e-engine)
+> error[E0382]: use of moved 
+value: `stamp`
+      --> game-engine\src\gam
+e.rs:1196:62
+       |
+  help: consider cloning the 
+value if the performance 
+cost is acceptable
+       |
+  1185 |                     
+            self.add_stamp_wi
+th_checks(player_idx, 
+stamp.clone());
+       |                     
+                             
+                           
+++++++++
+  System.Management.Automatio
+n.RemoteException
+> For more information about 
+this error, try `rustc 
+--explain E0382`.
+> error: could not compile 
+`game-engine` (lib) due to 1 
+previous error
+
+
