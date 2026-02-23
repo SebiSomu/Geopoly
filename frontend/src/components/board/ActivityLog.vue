@@ -13,6 +13,17 @@ const CHARACTER_EMOJIS: Record<string, string> = {
   dog: '🐶',
 }
 
+const COLOR_MAP: Record<string, string> = {
+  Brown: '#8b4513',
+  LightBlue: '#add8e6',
+  Pink: '#ffc0cb',
+  Orange: '#ffa500',
+  Yellow: '#ffff00',
+  Red: '#ff0000',
+  Green: '#008000',
+  DarkBlue: '#00008b'
+};
+
 function getPlayerColor(idx: number): string {
   const colors = ['#60a5fa', '#f472b6', '#34d399', '#fbbf24']
   return colors[idx % colors.length] ?? '#94a3b8'
@@ -34,6 +45,18 @@ const displayEntries = computed(() => {
         playerColor = getPlayerColor(entry.playerIdx)
       }
     }
+
+    // Parse message for dots: [DOT:ColorName]
+    const contentMessage = playerName ? entry.message.replace(playerName, '').trim() : entry.message;
+    const parts = contentMessage.split(/(\[DOT:\w+\])/g);
+    const parsedMessage = parts.map(part => {
+      const match = part.match(/\[DOT:(\w+)\]/);
+      if (match && match[1]) {
+        const colorName = match[1];
+        return { type: 'dot', color: COLOR_MAP[colorName] || '#fff' };
+      }
+      return { type: 'text', content: part };
+    });
     
     return {
       ...entry,
@@ -41,6 +64,7 @@ const displayEntries = computed(() => {
       playerEmoji,
       playerCharacter,
       playerColor,
+      parsedMessage
     }
   })
 })
@@ -86,7 +110,10 @@ const displayEntries = computed(() => {
         </div>
         <span class="entry-text">
           <span class="entry-player" :style="{ color: entry.playerColor }">{{ entry.playerName }}</span>
-          {{ entry.playerName ? entry.message.replace(entry.playerName, '').trim() : entry.message }}
+          <template v-for="(part, pIdx) in entry.parsedMessage" :key="pIdx">
+            <span v-if="part.type === 'dot'" class="log-dot" :style="{ backgroundColor: part.color }"></span>
+            <span v-else>{{ part.content }}</span>
+          </template>
         </span>
       </div>
     </TransitionGroup>
@@ -183,6 +210,18 @@ const displayEntries = computed(() => {
 
 .entry-player {
   font-weight: 600;
+  margin-right: 4px;
+}
+
+.log-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  margin: 0 4px;
+  vertical-align: middle;
+  border: 1px solid rgba(255, 255, 255, 0.2);
+  box-shadow: 0 0 4px rgba(0, 0, 0, 0.5);
 }
 
 /* TransitionGroup animations */

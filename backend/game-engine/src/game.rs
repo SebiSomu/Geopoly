@@ -43,7 +43,7 @@ pub enum JailAction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum GameAction {
     Payment { from: Option<usize>, to: Option<usize>, amount: i32 },
-    StampTransfer { from: Option<usize>, to: Option<usize>, stamp_name: String, stamp_id: String, is_first_class: bool },
+    StampTransfer { from: Option<usize>, to: Option<usize>, stamp_name: String, stamp_id: String, is_first_class: bool, initiator: Option<usize> },
     GoToJail { player_idx: usize },
     Move { player_idx: usize, from: u8, to: u8 },
 }
@@ -145,8 +145,7 @@ impl Game {
         self.history.iter().rev().take(3).any(|action| {
              match action {
                 GameAction::Payment { from, to, .. } => *from == Some(player_idx) && to.is_some(),
-                GameAction::StampTransfer { from, .. } => *from == Some(player_idx),
-                GameAction::GoToJail { player_idx: p_idx } => *p_idx == player_idx,
+                GameAction::StampTransfer { from, initiator, .. } => *from == Some(player_idx) && *initiator != Some(player_idx),
                 _ => false
             }
         })
@@ -764,7 +763,8 @@ impl Game {
                         to: Some(player_idx),
                         stamp_name: "First Class".to_string(),
                         stamp_id: "first_class".to_string(),
-                        is_first_class: true
+                        is_first_class: true,
+                        initiator: Some(player_idx)
                     });
 
                     self.players[player_idx].passport.add_stamp(stamp);
@@ -1120,13 +1120,13 @@ impl Game {
                              
                              self.log_action(Some(i), format!("Last stamp ({}) removed from passport", stamp.name));
                              
-                             // Record Removal as a Transfer to "None" (Board)
                              self.history.push(GameAction::StampTransfer {
                                  from: Some(i),
                                  to: None,
                                  stamp_name: stamp.name.clone(),
                                  stamp_id: format!("{}", stamp.destination_id.unwrap_or(0)),
-                                 is_first_class: stamp.destination_id.is_none()
+                                 is_first_class: stamp.destination_id.is_none(),
+                                 initiator: Some(player_idx)
                              });
                         }
                     }
@@ -1239,7 +1239,8 @@ impl Game {
                                      to: Some(player_idx), 
                                      stamp_name: stamp_name.clone(), 
                                      stamp_id: s_id,
-                                     is_first_class: is_fc
+                                     is_first_class: is_fc,
+                                     initiator: Some(player_idx)
                                  });
 
                                  self.log_action(Some(player_idx), format!("{} intercepted {} from {}", self.players[player_idx].name, stamp_name, self.players[old_buyer_idx].name));
@@ -1266,10 +1267,7 @@ impl Game {
                             GameAction::Payment { from, to, amount } if *from == Some(player_idx) && to.is_some() => {
                                 Some((i, action.clone()))
                             },
-                            GameAction::StampTransfer { from, .. } if *from == Some(player_idx) => {
-                                Some((i, action.clone()))
-                            },
-                            GameAction::GoToJail { player_idx: p_idx } if *p_idx == player_idx => {
+                            GameAction::StampTransfer { from, initiator, .. } if *from == Some(player_idx) && *initiator != Some(player_idx) => {
                                 Some((i, action.clone()))
                             },
                             _ => None
@@ -1343,11 +1341,6 @@ impl Game {
                                 println!("🛑 SAY NO! Ștampila {} a fost recuperată!", stamp_name);
                                 self.log_action(Some(player_idx), format!("Just Say No! Stamp {} recovered", stamp_name));
                             }
-                        },
-                        GameAction::GoToJail { .. } => {
-                            self.players[player_idx].release_from_jail();
-                            println!("🛑 SAY NO! Mersul la închisoare a fost anulat.");
-                            self.log_action(Some(player_idx), "Just Say No! Jail cancelled".to_string());
                         },
                         _ => {}
                     }
@@ -1457,7 +1450,8 @@ impl Game {
                         to: Some(player_idx),
                         stamp_name: s_name,
                         stamp_id: s_id,
-                        is_first_class: is_fc
+                        is_first_class: is_fc,
+                        initiator: Some(player_idx)
                     });
 
                     // Add stamp to the stealer
@@ -1747,22 +1741,24 @@ impl Game {
                          if let Some(s2) = self.players[p2_idx].passport.remove_last_stamp() {
                              println!("♻️ SNEAKY SWAP! {} și {} schimbă ultimele ștampile ('{}' ↔ '{}')!", 
                                       self.players[p1_idx].name, self.players[p2_idx].name, s1.name, s2.name);
-                             
-                             // Record Transfers
                              self.history.push(GameAction::StampTransfer {
                                  from: Some(p1_idx),
                                  to: Some(p2_idx),
                                  stamp_name: s1.name.clone(),
                                  stamp_id: format!("{}", s1.destination_id.unwrap_or(0)),
-                                 is_first_class: s1.destination_id.is_none()
+                                 is_first_class: s1.destination_id.is_none(),
+                                 initiator: None // Chance card is random
                              });
                              self.history.push(GameAction::StampTransfer {
                                  from: Some(p2_idx),
                                  to: Some(p1_idx),
                                  stamp_name: s2.name.clone(),
                                  stamp_id: format!("{}", s2.destination_id.unwrap_or(0)),
-                                 is_first_class: s2.destination_id.is_none()
+                                 is_first_class: s2.destination_id.is_none(),
+                                 initiator: None // Chance card is random
                              });
+
+                             self.log_action(None, format!("♻️ Sneaky Swap: {} and {} swapped stamps!", self.players[p1_idx].name, self.players[p2_idx].name));
 
                              self.add_stamp_with_checks(p1_idx, s2);
                              self.add_stamp_with_checks(p2_idx, s1);
@@ -2069,7 +2065,8 @@ impl Game {
                         to: Some(opp_idx),
                         stamp_name: my_stamp.name.clone(),
                         stamp_id: format!("{}", my_stamp.destination_id.unwrap_or(0)),
-                        is_first_class: my_stamp.destination_id.is_none()
+                        is_first_class: my_stamp.destination_id.is_none(),
+                        initiator: Some(player_idx)
                     });
 
                     self.history.push(GameAction::StampTransfer {
@@ -2077,8 +2074,17 @@ impl Game {
                         to: Some(player_idx),
                         stamp_name: opp_stamp.name.clone(),
                         stamp_id: format!("{}", opp_stamp.destination_id.unwrap_or(0)),
-                        is_first_class: opp_stamp.destination_id.is_none()
+                        is_first_class: opp_stamp.destination_id.is_none(),
+                        initiator: Some(player_idx)
                     });
+
+                    let my_s_name = my_stamp.name.clone();
+                    let opp_s_name = opp_stamp.name.clone();
+
+                    // Log the swap BEFORE moving the stamps and checking win
+                    let my_name = self.players[player_idx].name.clone();
+                    let opp_name = self.players[opp_idx].name.clone();
+                    self.log_action(Some(player_idx), format!("{} swapped {} for {} with {}", my_name, my_s_name, opp_s_name, opp_name));
 
                     self.add_stamp_with_checks(player_idx, opp_stamp);
                     self.add_stamp_with_checks(opp_idx, my_stamp);
@@ -2131,7 +2137,8 @@ impl Game {
                          to: Some(opp_idx),
                          stamp_name: stamp1.name.clone(),
                          stamp_id: format!("{}", stamp1.destination_id.unwrap_or(0)),
-                         is_first_class: stamp1.destination_id.is_none()
+                         is_first_class: stamp1.destination_id.is_none(),
+                         initiator: Some(player_idx)
                      });
 
                      self.history.push(GameAction::StampTransfer {
@@ -2139,15 +2146,21 @@ impl Game {
                          to: Some(player_idx),
                          stamp_name: stamp2.name.clone(),
                          stamp_id: format!("{}", stamp2.destination_id.unwrap_or(0)),
-                         is_first_class: stamp2.destination_id.is_none()
+                         is_first_class: stamp2.destination_id.is_none(),
+                         initiator: Some(player_idx)
                      });
                      
-                     self.add_stamp_with_checks(player_idx, stamp2);
-                     self.add_stamp_with_checks(opp_idx, stamp1);
+                     self.add_stamp_with_checks(player_idx, stamp2.clone());
+                     self.add_stamp_with_checks(opp_idx, stamp1.clone());
                      
                      // Verifică câștig
                      if self.check_and_handle_win(player_idx) { return; }
                      if self.check_and_handle_win(opp_idx) { return; }
+
+                     // Log the swap
+                     let p_name = self.players[player_idx].name.clone();
+                     let o_name = self.players[opp_idx].name.clone();
+                     self.log_action(Some(player_idx), format!("{} swapped {} for {} with {}", p_name, stamp1.name, stamp2.name, o_name));
                 }
             } else {
                  println!("Niciun adversar nu are stampile!");
@@ -2181,7 +2194,8 @@ impl Game {
                     to: Some(player_idx),
                     stamp_name: stamp.name.clone(),
                     stamp_id: format!("{}", stamp.destination_id.unwrap_or(0)),
-                    is_first_class
+                    is_first_class,
+                    initiator: Some(player_idx)
                 });
                 
                 self.add_stamp_with_checks(player_idx, stamp);
@@ -2289,12 +2303,13 @@ impl Game {
             to: Some(player_idx),
             stamp_name: stamp.name.clone(),
             stamp_id: format!("{}", dest.id),
-            is_first_class: false
+            is_first_class: false,
+            initiator: Some(player_idx)
         });
 
         let name = self.players[player_idx].name.clone();
         let dest_name = dest.name.clone();
-        self.log_action(Some(player_idx), format!("{} bought 🏠 {}", name, dest_name));
+        self.log_action(Some(player_idx), format!("{} bought [DOT:{:?}] {}", name, dest.color, dest_name));
 
         self.add_stamp_with_checks(player_idx, stamp)
     }

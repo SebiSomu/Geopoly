@@ -128,12 +128,6 @@ impl ChanceDeck {
         let mut rng = thread_rng();
         cards.shuffle(&mut rng);
 
-        // TEST: Punem cartonașul de furat ștampila în vârful teancului (pop ia ultimul element)
-        if let Some(pos) = cards.iter().position(|c| c.id == "chance_steal") {
-            let card = cards.remove(pos);
-            cards.push(card);
-        }
-
         ChanceDeck {
             cards,
             discard_pile: Vec::new(),
