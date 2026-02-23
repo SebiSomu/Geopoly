@@ -5,7 +5,7 @@ import {
   GET_LOBBY_QUERY, ROLL_DICE_MUTATION, RESOLVE_FORCED_DEAL_MUTATION, 
   RESOLVE_PURCHASE_MUTATION, RESOLVE_FIRST_CLASS_MUTATION, 
   RESOLVE_AIRPORT_DECISION_MUTATION, RESOLVE_AIRPORT_DESTINATION_MUTATION, 
-  RESOLVE_TARGET_SELECTION_MUTATION, ROLL_DUEL_DIE_MUTATION,
+  RESOLVE_TARGET_SELECTION_MUTATION, ROLL_DUEL_DICE_MUTATION, FINISH_DUEL_MUTATION,
   PLACE_BID_MUTATION, RESOLVE_AUCTION_MUTATION,
   RESOLVE_JAIL_DECISION_MUTATION
 } from '../../graphql/operations'
@@ -39,7 +39,8 @@ const { mutate: resolveFirstClassMutation } = useMutation(RESOLVE_FIRST_CLASS_MU
 const { mutate: resolveAirportDecisionMutation } = useMutation(RESOLVE_AIRPORT_DECISION_MUTATION);
 const { mutate: resolveAirportDestinationMutation } = useMutation(RESOLVE_AIRPORT_DESTINATION_MUTATION);
 const { mutate: resolveTargetSelectionMutation } = useMutation(RESOLVE_TARGET_SELECTION_MUTATION);
-const { mutate: rollDuelDieMutation } = useMutation(ROLL_DUEL_DIE_MUTATION);
+const { mutate: rollDuelDiceMutation } = useMutation(ROLL_DUEL_DICE_MUTATION);
+const { mutate: finishDuelMutation } = useMutation(FINISH_DUEL_MUTATION);
 const { mutate: placeBidMutation } = useMutation(PLACE_BID_MUTATION);
 const { mutate: resolveAuctionMutation } = useMutation(RESOLVE_AUCTION_MUTATION);
 const { mutate: resolveJailDecisionMutation } = useMutation(RESOLVE_JAIL_DECISION_MUTATION);
@@ -678,15 +679,27 @@ const handleResolveAuction = async () => {
 }
 
 // Handle Dice Duel Roll
-const handleRollDuelDie = async () => {
+const handleRollDuelDice = async () => {
   try {
-    await rollDuelDieMutation({
+    await rollDuelDiceMutation({
       code: props.code,
       username: username
     })
     // UI will update via poll
   } catch (e) {
     console.error("Duel roll failed:", e)
+  }
+}
+
+// Handle Finish Duel (resolve state)
+const handleFinishDuel = async () => {
+  try {
+    await finishDuelMutation({
+      code: props.code,
+      username: username
+    })
+  } catch (e) {
+    console.error("Finish duel failed:", e)
   }
 }
 
@@ -1193,7 +1206,8 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                 :isDuel="!!gameState.diceDuel"
                 :duelData="gameState.diceDuel ?? undefined"
                 @roll="rollDice"
-                @rollDuel="handleRollDuelDie"
+                @rollDuel="handleRollDuelDice"
+                @finish-duel="handleFinishDuel"
               />
 
               <!-- Activity Log -->

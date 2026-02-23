@@ -52,6 +52,7 @@ const props = withDefaults(defineProps<Props>(), {
 const emit = defineEmits<{
   (e: 'roll'): void
   (e: 'rollDuel'): void
+  (e: 'finish-duel'): void
 }>()
 
 // Duel Helpers
@@ -120,6 +121,10 @@ const handleRollClick = () => {
   }
 }
 
+const handleFinishDuel = () => {
+  emit('finish-duel')
+}
+
 const isButtonDisabled = computed(() => {
   if (props.isDuel) {
     return !isMyTurnToRollDuel.value || props.isRolling
@@ -160,6 +165,7 @@ const buttonText = computed(() => props.isDuel ? 'ROLL DICE' : 'ROLL')
       />
       
       <button 
+        v-if="nextRollerIdx !== -1 || !isDuel"
         class="roll-button" 
         :class="{ 'duel-btn': isDuel }"
         @click="handleRollClick"
@@ -167,6 +173,16 @@ const buttonText = computed(() => props.isDuel ? 'ROLL DICE' : 'ROLL')
       >
         <span class="roll-icon">🎲</span>
         <span class="roll-text">{{ buttonText }}</span>
+      </button>
+
+      <!-- Finish Duel Button -->
+      <button 
+        v-if="isDuel && nextRollerIdx === -1"
+        class="roll-button finish-btn" 
+        @click="handleFinishDuel"
+      >
+        <span class="roll-icon">🏁</span>
+        <span class="roll-text">FINISH DUEL</span>
       </button>
 
       <!-- Status Indicator -->
@@ -312,6 +328,12 @@ const buttonText = computed(() => props.isDuel ? 'ROLL DICE' : 'ROLL')
   background: linear-gradient(135deg, #f5c2e7 0%, #eba0ac 100%);
   color: #11111b;
   box-shadow: 0 12px 24px rgba(245, 194, 231, 0.3);
+}
+
+.roll-button.finish-btn {
+  background: linear-gradient(135deg, #a6e3a1 0%, #94e2d5 100%);
+  color: #11111b;
+  box-shadow: 0 12px 24px rgba(166, 227, 161, 0.3);
 }
 
 .roll-button:hover:not(:disabled) {

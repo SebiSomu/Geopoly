@@ -29,6 +29,12 @@ pub enum GameStep {
         challenger_roll: Option<(u8, u8)>, 
         target_roll: Option<(u8, u8)> 
     },
+    WaitingForDiceDuelResult { 
+        challenger_idx: usize, 
+        target_idx: usize, 
+        challenger_roll: (u8, u8), 
+        target_roll: (u8, u8) 
+    },
     WaitingForAuction { dest_id: u8, current_bid: i32, highest_bidder: Option<usize> },
     WaitingForJailDecision,
 }
@@ -43,7 +49,7 @@ pub enum JailAction {
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum GameAction {
     Payment { from: Option<usize>, to: Option<usize>, amount: i32 },
-    StampTransfer { from: Option<usize>, to: Option<usize>, stamp_name: String, stamp_id: String, is_first_class: bool, initiator: Option<usize> },
+    StampTransfer { from: Option<usize>, to: Option<usize>, stamp_name: String, stamp_id: String, is_first_class: bool, initiator: Option<usize>, can_say_no: bool },
     GoToJail { player_idx: usize },
     Move { player_idx: usize, from: u8, to: u8 },
 }
@@ -145,7 +151,8 @@ impl Game {
         self.history.iter().rev().take(3).any(|action| {
              match action {
                 GameAction::Payment { from, to, .. } => *from == Some(player_idx) && to.is_some(),
-                GameAction::StampTransfer { from, initiator, .. } => *from == Some(player_idx) && *initiator != Some(player_idx),
+                GameAction::StampTransfer { from, initiator, can_say_no, .. } => 
+                    *from == Some(player_idx) && *initiator != Some(player_idx) && *can_say_no,
                 _ => false
             }
         })
@@ -764,7 +771,8 @@ impl Game {
                         stamp_name: "First Class".to_string(),
                         stamp_id: "first_class".to_string(),
                         is_first_class: true,
-                        initiator: Some(player_idx)
+                        initiator: Some(player_idx),
+                        can_say_no: true
                     });
 
                     self.players[player_idx].passport.add_stamp(stamp);
@@ -936,7 +944,7 @@ impl Game {
         })
     }
 
-    pub fn roll_duel_die(&mut self) -> Result<TurnResult, String> {
+    pub fn roll_duel_dice(&mut self) -> Result<TurnResult, String> {
         let (challenger_idx, target_idx, mut c_roll, mut t_roll) = match &self.step {
             GameStep::WaitingForDiceDuel { challenger_idx, target_idx, challenger_roll, target_roll } => 
                 (*challenger_idx, *target_idx, *challenger_roll, *target_roll),
@@ -966,48 +974,20 @@ impl Game {
         };
 
         if let (Some((c1, c2)), Some((t1, t2))) = (c_roll, t_roll) {
-            let cr_sum = c1 + c2;
-            let tr_sum = t1 + t2;
-            println!("🏁 Rezultat Duel: {} ({}) vs {} ({})", self.players[challenger_idx].name, cr_sum, self.players[target_idx].name, tr_sum);
-            
-            if cr_sum > tr_sum {
-                 println!("🏆 {} câștigă duelul! Primește M100.", self.players[challenger_idx].name);
-                 self.players[target_idx].pay_money(100);
-                 self.players[challenger_idx].add_money(100);
-                 self.history.push(GameAction::Payment { 
-                     from: Some(target_idx), 
-                     to: Some(challenger_idx), 
-                     amount: 100 
-                 });
-                 let d_loser = self.players[target_idx].name.clone();
-                 let d_winner = self.players[challenger_idx].name.clone();
-                 self.log_action(Some(target_idx), format!("{} paid $100 to {}", d_loser, d_winner));
-            } else if tr_sum > cr_sum {
-                 println!("🏆 {} câștigă duelul! Primește M100.", self.players[target_idx].name);
-                 self.players[challenger_idx].pay_money(100);
-                 self.players[target_idx].add_money(100);
-                 self.history.push(GameAction::Payment { 
-                     from: Some(challenger_idx), 
-                     to: Some(target_idx), 
-                     amount: 100 
-                 });
-                 let d_loser2 = self.players[challenger_idx].name.clone();
-                 let d_winner2 = self.players[target_idx].name.clone();
-                 self.log_action(Some(challenger_idx), format!("{} paid $100 to {}", d_loser2, d_winner2));
-            } else {
-                 println!("🤝 Egalitate! Nimeni nu plătește.");
-            }
+            self.step = GameStep::WaitingForDiceDuelResult {
+                challenger_idx,
+                target_idx,
+                challenger_roll: (c1, c2),
+                target_roll: (t1, t2)
+            };
 
-            self.step = GameStep::WaitingForRoll;
-            self.end_turn();
-             
-             return Ok(TurnResult {
-                die1: c1 + c2, die2: t1 + t2, // This return is technically for the LAST roll (target)
-                is_double: cr_sum == tr_sum,
+            return Ok(TurnResult {
+                die1: t1, die2: t2, // Show target's roll
+                is_double: t1 == t2,
                 is_forced_deal: false,
                 new_position: self.players[self.current_player_idx].position as u8,
                 went_to_jail: false,
-                turn_ends: true,
+                turn_ends: false,
                 current_player_index: self.current_player_idx as u8,
             });
         }
@@ -1021,6 +1001,51 @@ impl Game {
             turn_ends: false,
             current_player_index: self.current_player_idx as u8,
         })
+    }
+
+    pub fn resolve_dice_duel(&mut self) -> Result<(), String> {
+        let (challenger_idx, target_idx, c1, c2, t1, t2) = match &self.step {
+            GameStep::WaitingForDiceDuelResult { challenger_idx, target_idx, challenger_roll: (c1, c2), target_roll: (t1, t2) } => 
+                (*challenger_idx, *target_idx, *c1, *c2, *t1, *t2),
+            _ => return Err("Nu există un duel de finalizat!".to_string()),
+        };
+
+        let cr_sum = c1 + c2;
+        let tr_sum = t1 + t2;
+        println!("🏁 Rezultat Duel FINAL: {} ({}) vs {} ({})", self.players[challenger_idx].name, cr_sum, self.players[target_idx].name, tr_sum);
+        
+        if cr_sum > tr_sum {
+             println!("🏆 {} câștigă duelul! Primește M100.", self.players[challenger_idx].name);
+             self.players[target_idx].pay_money(100);
+             self.players[challenger_idx].add_money(100);
+             self.history.push(GameAction::Payment { 
+                 from: Some(target_idx), 
+                 to: Some(challenger_idx), 
+                 amount: 100 
+             });
+             let d_loser = self.players[target_idx].name.clone();
+             let d_winner = self.players[challenger_idx].name.clone();
+             self.log_action(Some(target_idx), format!("{} paid $100 to {}", d_loser, d_winner));
+        } else if tr_sum > cr_sum {
+             println!("🏆 {} câștigă duelul! Primește M100.", self.players[target_idx].name);
+             self.players[challenger_idx].pay_money(100);
+             self.players[target_idx].add_money(100);
+             self.history.push(GameAction::Payment { 
+                 from: Some(challenger_idx), 
+                 to: Some(target_idx), 
+                 amount: 100 
+             });
+             let d_loser2 = self.players[challenger_idx].name.clone();
+             let d_winner2 = self.players[target_idx].name.clone();
+             self.log_action(Some(challenger_idx), format!("{} paid $100 to {}", d_loser2, d_winner2));
+        } else {
+             println!("🤝 Egalitate! Nimeni nu plătește.");
+        }
+
+        self.step = GameStep::WaitingForRoll;
+        self.end_turn();
+        self.update_all_reactive_statuses();
+        Ok(())
     }
 
     /// Folosește un cartonaș Here&Now din mână
@@ -1126,7 +1151,8 @@ impl Game {
                                  stamp_name: stamp.name.clone(),
                                  stamp_id: format!("{}", stamp.destination_id.unwrap_or(0)),
                                  is_first_class: stamp.destination_id.is_none(),
-                                 initiator: Some(player_idx)
+                                 initiator: Some(player_idx),
+                                 can_say_no: true
                              });
                         }
                     }
@@ -1240,7 +1266,8 @@ impl Game {
                                      stamp_name: stamp_name.clone(), 
                                      stamp_id: s_id,
                                      is_first_class: is_fc,
-                                     initiator: Some(player_idx)
+                                     initiator: Some(player_idx),
+                                     can_say_no: true,
                                  });
 
                                  self.log_action(Some(player_idx), format!("{} intercepted {} from {}", self.players[player_idx].name, stamp_name, self.players[old_buyer_idx].name));
@@ -1451,7 +1478,8 @@ impl Game {
                         stamp_name: s_name,
                         stamp_id: s_id,
                         is_first_class: is_fc,
-                        initiator: Some(player_idx)
+                        initiator: Some(player_idx),
+                        can_say_no: true,
                     });
 
                     // Add stamp to the stealer
@@ -1710,8 +1738,18 @@ impl Game {
             ChanceCardAction::RerollOneDie => {
                 let mut rng = rand::thread_rng();
                 let d = rng.gen_range(1..=6);
+                let old_pos = self.players[idx].position;
                 println!("{}", format!("Arunci încă un zar: {}. Te muți {} spații.", d, d).cyan());
+                
                 self.move_player(d);
+                let new_pos = self.players[idx].position;
+                
+                self.history.push(GameAction::Move {
+                    player_idx: idx,
+                    from: old_pos as u8,
+                    to: new_pos as u8
+                });
+                
                 self.handle_landing(idx);
             }
 
@@ -1747,7 +1785,8 @@ impl Game {
                                  stamp_name: s1.name.clone(),
                                  stamp_id: format!("{}", s1.destination_id.unwrap_or(0)),
                                  is_first_class: s1.destination_id.is_none(),
-                                 initiator: None // Chance card is random
+                                 initiator: None,
+                                 can_say_no: true,
                              });
                              self.history.push(GameAction::StampTransfer {
                                  from: Some(p2_idx),
@@ -1755,7 +1794,8 @@ impl Game {
                                  stamp_name: s2.name.clone(),
                                  stamp_id: format!("{}", s2.destination_id.unwrap_or(0)),
                                  is_first_class: s2.destination_id.is_none(),
-                                 initiator: None // Chance card is random
+                                 initiator: None,
+                                 can_say_no: true,
                              });
 
                              self.log_action(None, format!("♻️ Sneaky Swap: {} and {} swapped stamps!", self.players[p1_idx].name, self.players[p2_idx].name));
@@ -2066,7 +2106,8 @@ impl Game {
                         stamp_name: my_stamp.name.clone(),
                         stamp_id: format!("{}", my_stamp.destination_id.unwrap_or(0)),
                         is_first_class: my_stamp.destination_id.is_none(),
-                        initiator: Some(player_idx)
+                        initiator: Some(player_idx),
+                        can_say_no: true,
                     });
 
                     self.history.push(GameAction::StampTransfer {
@@ -2075,7 +2116,8 @@ impl Game {
                         stamp_name: opp_stamp.name.clone(),
                         stamp_id: format!("{}", opp_stamp.destination_id.unwrap_or(0)),
                         is_first_class: opp_stamp.destination_id.is_none(),
-                        initiator: Some(player_idx)
+                        initiator: Some(player_idx),
+                        can_say_no: true,
                     });
 
                     let my_s_name = my_stamp.name.clone();
@@ -2138,7 +2180,8 @@ impl Game {
                          stamp_name: stamp1.name.clone(),
                          stamp_id: format!("{}", stamp1.destination_id.unwrap_or(0)),
                          is_first_class: stamp1.destination_id.is_none(),
-                         initiator: Some(player_idx)
+                         initiator: Some(player_idx),
+                         can_say_no: true,
                      });
 
                      self.history.push(GameAction::StampTransfer {
@@ -2147,7 +2190,8 @@ impl Game {
                          stamp_name: stamp2.name.clone(),
                          stamp_id: format!("{}", stamp2.destination_id.unwrap_or(0)),
                          is_first_class: stamp2.destination_id.is_none(),
-                         initiator: Some(player_idx)
+                         initiator: Some(player_idx),
+                         can_say_no: true,
                      });
                      
                      self.add_stamp_with_checks(player_idx, stamp2.clone());
@@ -2195,7 +2239,8 @@ impl Game {
                     stamp_name: stamp.name.clone(),
                     stamp_id: format!("{}", stamp.destination_id.unwrap_or(0)),
                     is_first_class,
-                    initiator: Some(player_idx)
+                    initiator: Some(player_idx),
+                    can_say_no: false // ACEST CAZ ESTE EXCLUS de la Just Say No!
                 });
                 
                 self.add_stamp_with_checks(player_idx, stamp);
@@ -2297,15 +2342,15 @@ impl Game {
         let stamp = Stamp::from_destination(dest);
         println!("{}", format!("✅ {} a cumpărat destinația {} și a primit stampila!", self.players[player_idx].name, dest.name).green());
         
-        // Record StampTransfer from Bank (None)
         self.history.push(GameAction::StampTransfer {
-            from: None,
-            to: Some(player_idx),
-            stamp_name: stamp.name.clone(),
-            stamp_id: format!("{}", dest.id),
-            is_first_class: false,
-            initiator: Some(player_idx)
-        });
+                    from: None,
+                    to: Some(player_idx),
+                    stamp_name: stamp.name.clone(),
+                    stamp_id: format!("{}", dest.id),
+                    is_first_class: false,
+                    initiator: Some(player_idx),
+                    can_say_no: true,
+                });
 
         let name = self.players[player_idx].name.clone();
         let dest_name = dest.name.clone();

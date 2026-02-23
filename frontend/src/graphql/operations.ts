@@ -229,9 +229,17 @@ export const RESOLVE_TARGET_SELECTION_MUTATION = gql`
   }
 `
 
-export const ROLL_DUEL_DIE_MUTATION = gql`
-  mutation RollDuelDie($code: String!, $username: String!) {
-    rollDuelDie(code: $code, username: $username) {
+export const ROLL_DUEL_DICE_MUTATION = gql`
+  mutation RollDuelDice($code: String!, $username: String!) {
+    rollDuelDice(code: $code, username: $username) {
+      code
+    }
+  }
+`
+
+export const FINISH_DUEL_MUTATION = gql`
+  mutation FinishDuel($code: String!, $username: String!) {
+    finishDuel(code: $code, username: $username) {
       code
     }
   }

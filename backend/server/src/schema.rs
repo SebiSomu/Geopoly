@@ -96,29 +96,39 @@ impl Lobby {
             };
 
             let target_selection = match &game.step {
-                GameStep::WaitingForTargetSelection { action, card_id, selector_idx } => {
-                    Some(TargetSelectionData {
-                        action: action.clone(),
-                        card_id: card_id.clone(),
-                        selector_idx: *selector_idx,
-                    })
-                },
-                _ => None,
-            };
+                            GameStep::WaitingForTargetSelection { action, card_id, selector_idx } => {
+                                Some(TargetSelectionData {
+                                    action: action.clone(),
+                                    card_id: card_id.clone(),
+                                    selector_idx: *selector_idx,
+                                })
+                            },
+                            _ => None,
+                        };
 
-            let dice_duel = match &game.step {
-                GameStep::WaitingForDiceDuel { challenger_idx, target_idx, challenger_roll, target_roll } => {
-                    Some(DiceDuelData {
-                        challenger_idx: *challenger_idx,
-                        target_idx: *target_idx,
-                        challenger_die1: challenger_roll.map(|r| r.0),
-                        challenger_die2: challenger_roll.map(|r| r.1),
-                        target_die1: target_roll.map(|r| r.0),
-                        target_die2: target_roll.map(|r| r.1),
-                    })
-                },
-                _ => None,
-            };
+                        let dice_duel = match &game.step {
+                            GameStep::WaitingForDiceDuel { challenger_idx, target_idx, challenger_roll, target_roll } => {
+                                Some(DiceDuelData {
+                                    challenger_idx: *challenger_idx,
+                                    target_idx: *target_idx,
+                                    challenger_die1: challenger_roll.map(|r| r.0),
+                                    challenger_die2: challenger_roll.map(|r| r.1),
+                                    target_die1: target_roll.map(|r| r.0),
+                                    target_die2: target_roll.map(|r| r.1),
+                                })
+                            },
+                            GameStep::WaitingForDiceDuelResult { challenger_idx, target_idx, challenger_roll, target_roll } => {
+                                Some(DiceDuelData {
+                                    challenger_idx: *challenger_idx,
+                                    target_idx: *target_idx,
+                                    challenger_die1: Some(challenger_roll.0),
+                                    challenger_die2: Some(challenger_roll.1),
+                                    target_die1: Some(target_roll.0),
+                                    target_die2: Some(target_roll.1),
+                                })
+                            },
+                            _ => None,
+                        };
             
             let pending_first_class = match &game.step {
                 GameStep::WaitingForFirstClassDecision { buyer_idx } => Some(PendingDecision { buyer_idx: *buyer_idx }),
@@ -945,7 +955,7 @@ impl MutationRoot {
     }
 
     /// Roll dice in a duel
-    async fn roll_duel_die(&self, ctx: &Context<'_>, code: String, username: String) -> Result<Lobby> {
+    async fn roll_duel_dice(&self, ctx: &Context<'_>, code: String, username: String) -> Result<Lobby> {
         let db = ctx.data::<DB>()?;
         let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
 
@@ -965,7 +975,54 @@ impl MutationRoot {
             }
 
             // Execute Action
-            game.roll_duel_die()
+            game.roll_duel_dice()
+                .map_err(|e| Error::new(e))?;
+
+            // Sync State
+            sync_lobby_state(&mut lobby.players, game);
+
+            // Save
+            db.lobbies().update_one(
+                doc! { "_id": lobby.id },
+                doc! { 
+                    "$set": { 
+                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                    } 
+                },
+                None
+            ).await?;
+
+            Ok(lobby)
+        } else {
+            Err(Error::new("Lobby not found"))
+        }
+    }
+
+    /// Finish a duel after both players rolled
+    async fn finish_duel(&self, ctx: &Context<'_>, code: String, username: String) -> Result<Lobby> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+
+        if let Some(mut lobby) = lobby_opt {
+            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+            
+            // Validate turn - any participant can finish the duel? 
+            // Usually the current player or the one who just rolled. 
+            // Let's allow either challenger or target.
+            let is_participant = match &game.step {
+                GameStep::WaitingForDiceDuelResult { challenger_idx, target_idx, .. } => {
+                    game.players[*challenger_idx].name == username || game.players[*target_idx].name == username
+                },
+                _ => false,
+            };
+
+            if !is_participant {
+                return Err(Error::new("Nu participi la acest duel!"));
+            }
+
+            // Execute Action
+            game.resolve_dice_duel()
                 .map_err(|e| Error::new(e))?;
 
             // Sync State

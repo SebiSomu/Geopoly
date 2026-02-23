@@ -121,7 +121,7 @@ impl ChanceDeck {
                 id: "chance_get_out_jail".to_string(),
                 description: "Get Out of Jail Free!".to_string(),
                 action: ChanceCardAction::GetOutOfJailFree,
-                can_keep: true, // POATE FI PĂSTRAT
+                can_keep: true,
             },
         ];
 
