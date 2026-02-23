@@ -187,6 +187,11 @@ impl Lobby {
 }
 
 fn sync_lobby_state(players: &mut Vec<Player>, game: &Game) {
+    const COLUMN_WIDTH: f32 = 100.0; // px
+    const PX_PER_CM: f32 = 40.0;
+    // Small overlap past tangent point for the "just touching" look
+    const TOUCH_OVERLAP: f32 = 1.0; // 0.025cm * 40px/cm — synced with passport.rs
+
     for server_player in players {
         if let Some(engine_player) = game.players.iter().find(|p| p.name == server_player.username) {
             server_player.position = engine_player.position as u8;
@@ -194,15 +199,65 @@ fn sync_lobby_state(players: &mut Vec<Player>, game: &Game) {
             server_player.money = engine_player.money;
             let mut properties = Vec::new();
 
-            // Populate from left column
-            for s in &engine_player.passport.left_column {
-                properties.push(map_stamp_to_info(s, game, "left"));
-            }
+            // Helper: compute stamp positions for a column using circle-tangent geometry
+            // Stamps zig-zag: even indices flush right, odd indices flush left
+            let compute_column = |column: &[game_engine::passport::Stamp], col_name: &str, game: &Game| -> Vec<crate::model::PropertyInfo> {
+                let mut col_props = Vec::new();
+                let mut prev_x: f32 = 0.0;
+                let mut prev_y: f32 = 0.0;
+                let mut prev_size: f32 = 0.0;
 
-            // Populate from right column
-            for s in &engine_player.passport.right_column {
-                properties.push(map_stamp_to_info(s, game, "right"));
-            }
+                for (i, s) in column.iter().enumerate() {
+                    let size_px = (s.diameter * PX_PER_CM).round();
+                    let r = size_px / 2.0;
+
+                    // Zig-zag: even=flush right, odd=flush left
+                    let x = if i % 2 == 0 {
+                        COLUMN_WIDTH - size_px // flush right
+                    } else {
+                        0.0 // flush left
+                    };
+
+                    let y = if i == 0 {
+                        0.0 // first stamp sits at the bottom
+                    } else {
+                        let prev_r = prev_size / 2.0;
+                        // Horizontal distance between circle centers
+                        let prev_cx = prev_x + prev_r;
+                        let curr_cx = x + r;
+                        let dx = (curr_cx - prev_cx).abs();
+                        let sum_r = prev_r + r;
+
+                        // Vertical distance for circles to be tangent
+                        let dy = if dx >= sum_r {
+                            // Circles are too far apart horizontally to touch,
+                            // just stack vertically with no gap
+                            0.0
+                        } else {
+                            (sum_r * sum_r - dx * dx).sqrt()
+                        };
+
+                        // Position: previous center_y + dy - current radius
+                        // = (prev_y + prev_r) + dy - r
+                        // Then subtract TOUCH_OVERLAP for slight overlap past tangent
+                        prev_y + prev_r + dy - r - TOUCH_OVERLAP
+                    };
+
+                    prev_x = x;
+                    prev_y = y;
+                    prev_size = size_px;
+                    col_props.push(map_stamp_to_info(s, game, col_name, x, y, size_px as u32));
+                }
+                col_props
+            };
+
+            // Compute positions for left column
+            let left_props = compute_column(&engine_player.passport.left_column, "left", game);
+            properties.extend(left_props);
+
+            // Compute positions for right column
+            let right_props = compute_column(&engine_player.passport.right_column, "right", game);
+            properties.extend(right_props);
 
             server_player.properties = properties;
 
@@ -229,7 +284,7 @@ fn sync_lobby_state(players: &mut Vec<Player>, game: &Game) {
     }
 }
 
-fn map_stamp_to_info(s: &game_engine::passport::Stamp, game: &game_engine::game::Game, column: &str) -> crate::model::PropertyInfo {
+fn map_stamp_to_info(s: &game_engine::passport::Stamp, game: &game_engine::game::Game, column: &str, x: f32, y: f32, size: u32) -> crate::model::PropertyInfo {
     let color = if let Some(id) = s.destination_id {
         match game.board.find_destination_by_id(id).map(|d| d.color) {
             Some(game_engine::board::Color::Brown) => "brown",
@@ -252,6 +307,9 @@ fn map_stamp_to_info(s: &game_engine::passport::Stamp, game: &game_engine::game:
         diameter: s.diameter,
         column: column.to_string(),
         destination_id: s.destination_id,
+        x,
+        y,
+        size,
     }
 }
 

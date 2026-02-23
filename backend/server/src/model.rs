@@ -18,6 +18,9 @@ pub struct PropertyInfo {
     pub diameter: f32,
     pub column: String, // "left" or "right"
     pub destination_id: Option<u8>,
+    pub x: f32,   // horizontal position in pixels (within column)
+    pub y: f32,   // vertical position in pixels (from bottom of column)
+    pub size: u32, // diameter in pixels
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]

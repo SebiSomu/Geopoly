@@ -12,6 +12,9 @@ export interface PassportProperty {
   diameter: number;
   column: 'left' | 'right';
   destination_id?: number | null;
+  x: number;
+  y: number;
+  size: number;
 }
 
 export interface PlacedStamp {
@@ -66,7 +69,7 @@ const onDrop = (event: DragEvent, column: 'left' | 'right'): void => {
     if (colorType === 'gray') colorType = 'grey';
     if (colorType === 'darkblue') colorType = 'blue';
 
-    const stampSize = SIZES[colorType as keyof typeof SIZES] || 35;
+    const stampSize = droppedStamp.size || 35;
 
     localStamps.value.push({
       id: `stamp-${Date.now()}-${Math.random().toString(36).substr(2, 5)}`,
@@ -88,71 +91,30 @@ const clearStamps = (): void => {
   localStamps.value = [];
 };
 
-// Local mapping of sizes for positioning (copied from Stamp.vue to ensure 1:1 match)
-const SIZES = {
-  grey: 56, 
-  brown: 60, 
-  lightblue: 64, 
-  pink: 72, 
-  orange: 74, 
-  red: 84, 
-  yellow: 88, 
-  green: 98, 
-  blue: 100,
-};
-
 const processedStamps = computed(() => {
   const result: PlacedStamp[] = [...localStamps.value];
   
   if (props.properties) {
-    let leftUsedHeight = 0;
-    let rightUsedHeight = 0;
-    let leftCount = 0;
-    let rightCount = 0;
-    
     props.properties.forEach((p, index) => {
       // Normalize color name
       let colorKey = p.color.toLowerCase();
       if (colorKey === 'gray') colorKey = 'grey';
       if (colorKey === 'darkblue') colorKey = 'blue';
 
-      // Priority: use the diameter sent from server, fallback to hardcoded map
-      const diameterPx = Math.round(p.diameter * 40) || SIZES[colorKey as keyof typeof SIZES] || 35;
       const rotation = (index * 7) % 15 - 7;
       
-      let x = 0;
-      let y = 0;
-      
-      // Calculate available space for stagger to prevent bleeding outside 100px column
-      const columnWidth = 100;
-      const centerX = (columnWidth - diameterPx) / 2;
-      const allowedStagger = Math.max(0, Math.min(12, centerX)); 
-      
-      if (p.column === 'left') {
-        const overlap = leftCount === 0 ? 0 : 5; // Reverted to 5px
-        x = (leftCount % 2 === 0) ? (centerX + allowedStagger) : (centerX - allowedStagger);
-        
-        y = leftUsedHeight - overlap; 
-        leftUsedHeight = y + diameterPx; 
-        leftCount++;
-      } else {
-        const overlap = rightCount === 0 ? 0 : 5; // Reverted to 5px
-        x = (rightCount % 2 === 0) ? (centerX + allowedStagger) : (centerX - allowedStagger);
-        
-        y = rightUsedHeight - overlap;
-        rightUsedHeight = y + diameterPx;
-        rightCount++;
-      }
+      // Use server-provided positions directly
+      const sizePx = p.size || Math.round(p.diameter * 40) || 35;
       
       result.push({
         id: `prop-${index}-${p.name}`,
         colorType: colorKey as any,
         number: p.destination_id ?? '★',
-        x,
-        y,
+        x: p.x ?? 0,
+        y: p.y ?? 0,
         rotation,
         column: p.column,
-        size: diameterPx
+        size: sizePx
       });
     });
   }

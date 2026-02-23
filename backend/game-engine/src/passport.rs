@@ -4,7 +4,8 @@ use serde::{Serialize, Deserialize};
 pub const LEFT_COLUMN_HEIGHT: f32 = 8.0; // cm
 pub const RIGHT_COLUMN_HEIGHT: f32 = 7.0; // cm
 pub const FIRST_CLASS_DIAMETER: f32 = 1.4; // cm
-pub const STAMP_OVERLAP_CM: f32 = 0.125; // 5px at 40px/cm
+pub const COLUMN_WIDTH_CM: f32 = 2.5;     // 100px / 40px_per_cm
+pub const TOUCH_OVERLAP_CM: f32 = 0.025;  // 1px / 40px_per_cm — slight overlap past tangent
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stamp {
@@ -51,22 +52,74 @@ impl Passport {
         }
     }
 
+    /// Compute the total stack height of a column using circle-tangent geometry.
+    /// Stamps zig-zag: even indices flush right, odd indices flush left.
+    /// Uses the same formula as the frontend visual positioning.
+    fn column_height(stamps: &[Stamp]) -> f32 {
+        if stamps.is_empty() {
+            return 0.0;
+        }
+
+        let mut prev_x: f32 = 0.0;
+        let mut prev_y: f32 = 0.0;
+        let mut prev_d: f32 = 0.0;
+
+        for (i, s) in stamps.iter().enumerate() {
+            let d = s.diameter;
+            let r = d / 2.0;
+
+            // Zig-zag: even = flush right, odd = flush left
+            let x = if i % 2 == 0 {
+                (COLUMN_WIDTH_CM - d).max(0.0)
+            } else {
+                0.0
+            };
+
+            let y = if i == 0 {
+                0.0
+            } else {
+                let prev_r = prev_d / 2.0;
+                let prev_cx = prev_x + prev_r;
+                let curr_cx = x + r;
+                let dx = (curr_cx - prev_cx).abs();
+                let sum_r = prev_r + r;
+
+                let dy = if dx >= sum_r {
+                    0.0
+                } else {
+                    (sum_r * sum_r - dx * dx).sqrt()
+                };
+
+                prev_y + prev_r + dy - r - TOUCH_OVERLAP_CM
+            };
+
+            prev_x = x;
+            prev_y = y;
+            prev_d = d;
+        }
+
+        // Total height = y of last stamp + its diameter
+        prev_y + prev_d
+    }
+
     /// Încearcă să adauge o stampilă în pașaport
     /// Returnează true dacă a fost adăugată cu succes
     pub fn add_stamp(&mut self, stamp: Stamp) -> bool {
-        // 1️⃣ Încercăm să punem în coloana STÂNGĂ DOAR dacă ÎNCAPE
-        // Calculăm înălțimea efectivă adăugată (diametru minus overlap dacă nu e prima)
-        let left_overlap = if self.left_column.is_empty() { 0.0 } else { STAMP_OVERLAP_CM };
-        if self.left_height_used + stamp.diameter - left_overlap <= LEFT_COLUMN_HEIGHT {
-            self.left_height_used += stamp.diameter - left_overlap;
-            self.left_column.push(stamp);
-            return true;
+        // 1️⃣ Încercăm coloana STÂNGĂ — simulăm adăugarea și verificăm înălțimea
+        {
+            let mut test_col = self.left_column.clone();
+            test_col.push(stamp.clone());
+            let new_height = Self::column_height(&test_col);
+            if new_height <= LEFT_COLUMN_HEIGHT {
+                self.left_column.push(stamp);
+                self.left_height_used = new_height;
+                return true;
+            }
         }
 
-        // 2️⃣ Altfel, se pune în coloana DREAPTĂ (chiar dacă depășește)
-        let right_overlap = if self.right_column.is_empty() { 0.0 } else { STAMP_OVERLAP_CM };
-        self.right_height_used += stamp.diameter - right_overlap;
+        // 2️⃣ Altfel, coloana DREAPTĂ (chiar dacă depășește)
         self.right_column.push(stamp);
+        self.right_height_used = Self::column_height(&self.right_column);
 
         // 3️⃣ Dacă depășim coloana dreaptă → CÂȘTIG
         if self.right_height_used > RIGHT_COLUMN_HEIGHT {
@@ -77,28 +130,22 @@ impl Passport {
     }
 
     /// Verifică dacă pașaportul este plin (câștigător)
-    /// Ultima stampilă trebuie să depășească linia de sus a coloanei drepte
     pub fn is_full(&self) -> bool {
         self.overflowed
     }
 
-    /// Întoarce ultima stampilă adăugată (pentru returnare la bancă/schimb)
+    /// Întoarce ultima stampilă adăugată
     pub fn remove_last_stamp(&mut self) -> Option<Stamp> {
-        // Ultima stampilă e fie în dreapta (dacă există), fie în stânga
         if let Some(stamp) = self.right_column.pop() {
-            let overlap = if self.right_column.is_empty() { 0.0 } else { STAMP_OVERLAP_CM };
-            self.right_height_used -= stamp.diameter - overlap;
-
+            self.right_height_used = Self::column_height(&self.right_column);
             if self.right_height_used <= RIGHT_COLUMN_HEIGHT {
                 self.overflowed = false;
             }
-
             return Some(stamp);
         }
 
         if let Some(stamp) = self.left_column.pop() {
-            let overlap = if self.left_column.is_empty() { 0.0 } else { STAMP_OVERLAP_CM };
-            self.left_height_used -= stamp.diameter - overlap;
+            self.left_height_used = Self::column_height(&self.left_column);
             return Some(stamp);
         }
 
@@ -129,7 +176,7 @@ impl Passport {
         ids
     }
 
-    /// Returnează toate ștampilele din pașaport (pentru a număra FirstClass, etc.)
+    /// Returnează toate ștampilele din pașaport
     pub fn all_stamps(&self) -> Vec<&Stamp> {
         let mut v = Vec::new();
         for s in &self.left_column { v.push(s); }
@@ -137,46 +184,32 @@ impl Passport {
         v
     }
 
-    /// Caută o ștampilă după nume și returnează indexul ei în pașaport
-    /// Returnează poziția sub formă de (column: 0=left, 1=right, index_in_column)
+    /// Caută o ștampilă după nume și returnează indexul global
     pub fn find_stamp_index(&self, stamp_name: &str) -> Option<usize> {
-        // Căutăm în ambele coloane, returnăm indexul global (simplu)
         for (i, stamp) in self.left_column.iter().enumerate() {
             if stamp.name == stamp_name {
-                return Some(i); // index in left column
+                return Some(i);
             }
         }
         for (i, stamp) in self.right_column.iter().enumerate() {
             if stamp.name == stamp_name {
-                return Some(self.left_column.len() + i); // offset by left column size
+                return Some(self.left_column.len() + i);
             }
         }
         None
     }
 
-    /// Șterge ștampila de la poziția specificată
-    /// Poziția este indexul global (0..left.len() = left column, rest = right column)
+    /// Șterge ștampila de la poziția specificată (index global)
     pub fn remove_stamp_at(&mut self, global_idx: usize) -> Option<Stamp> {
         if global_idx < self.left_column.len() {
             let stamp = self.left_column.remove(global_idx);
-            // Recalculăm înălțimea coloanei stângi
-            self.left_height_used = 0.0;
-            for (i, s) in self.left_column.iter().enumerate() {
-                let overlap = if i == 0 { 0.0 } else { STAMP_OVERLAP_CM };
-                self.left_height_used += s.diameter - overlap;
-            }
+            self.left_height_used = Self::column_height(&self.left_column);
             Some(stamp)
         } else {
             let right_idx = global_idx - self.left_column.len();
             if right_idx < self.right_column.len() {
                 let stamp = self.right_column.remove(right_idx);
-                // Recalculăm înălțimea coloanei drepte
-                self.right_height_used = 0.0;
-                for (i, s) in self.right_column.iter().enumerate() {
-                    let overlap = if i == 0 { 0.0 } else { STAMP_OVERLAP_CM };
-                    self.right_height_used += s.diameter - overlap;
-                }
-                // Verificăm dacă am reintrat sub limită
+                self.right_height_used = Self::column_height(&self.right_column);
                 if self.right_height_used <= RIGHT_COLUMN_HEIGHT {
                     self.overflowed = false;
                 }
@@ -227,14 +260,16 @@ mod tests {
         };
 
         assert!(passport.add_stamp(stamp1.clone()));
-        assert_eq!(passport.left_height_used, 1.5);
+        // Primul element este exact diametrul
+        assert!((passport.left_height_used - 1.5).abs() < 0.001);
 
-        // Umplem coloana stângă
-        for _ in 0..4 {
+        // Umplem coloana stângă - cu noul model de stivuire, încap mai multe
+        // 1.5 + (6 * (1.118 - 0.025)) = 8.058cm (a 7-a ștampilă depășește)
+        for _ in 0..5 {
             passport.add_stamp(stamp1.clone());
         }
 
-        // Următoarea ar trebui să meargă în dreapta
+        // A 7-a ștampilă ar trebui să meargă în dreapta
         assert!(passport.add_stamp(stamp1.clone()));
         assert!(passport.right_height_used > 0.0);
     }
@@ -249,8 +284,9 @@ mod tests {
             name: "Big".to_string(),
         };
 
-        // umplem stânga
-        passport.add_stamp(big_stamp.clone());
+        // umplem stânga - 2.5cm lățime, 2.5cm diametru -> se stivuiesc perfect vertical
+        // Înălțime = 2.5 + 2.5 - 0.025 + 2.5 - 0.025 = 7.45cm
+        passport.add_stamp(big_stamp.clone()); 
         passport.add_stamp(big_stamp.clone());
         passport.add_stamp(big_stamp.clone());
 
@@ -258,7 +294,7 @@ mod tests {
         passport.add_stamp(big_stamp.clone());
         passport.add_stamp(big_stamp.clone());
 
-        // această ștampilă DEPĂȘEȘTE
+        // această ștampilă DEPĂȘEȘTE (7.45cm > 7.0cm limită coloana dreaptă)
         passport.add_stamp(big_stamp.clone());
 
         assert!(passport.is_full());

@@ -50,6 +50,9 @@ interface Property {
   diameter: number;
   column: 'left' | 'right';
   destination_id?: number | null;
+  x: number;
+  y: number;
+  size: number;
 }
 
 interface Player {
@@ -221,7 +224,10 @@ watchEffect(() => {
           color: prop.color,
           diameter: prop.diameter,
           column: prop.column,
-          destination_id: prop.destinationId
+          destination_id: prop.destinationId,
+          x: prop.x ?? 0,
+          y: prop.y ?? 0,
+          size: prop.size ?? 0
         })),
         hereAndNowCards: p.hereAndNowCards || [],
         chanceCards: p.chanceCards || [],

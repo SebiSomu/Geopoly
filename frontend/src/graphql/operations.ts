@@ -136,6 +136,9 @@ export const GET_LOBBY_QUERY = gql`
           diameter
           column
           destinationId
+          x
+          y
+          size
         }
         hereAndNowCards {
           id
