@@ -29,6 +29,7 @@ pub struct Player {
     pub can_use_discount: bool,
     pub can_use_intercept: bool,
     pub can_use_collect_tax: bool,
+    pub can_use_steal_first_class: bool,
 }
 
 impl Player {
@@ -56,6 +57,7 @@ impl Player {
             can_use_discount: false,
             can_use_intercept: false,
             can_use_collect_tax: false,
+            can_use_steal_first_class: false,
         }
     }
 

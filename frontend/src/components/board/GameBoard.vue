@@ -62,6 +62,11 @@ interface Player {
   properties: Property[];
   hereAndNowCards: Array<{ id: string; description: string }>;
   chanceCards: Array<{ id: string; description: string }>;
+  canUseSayNo: boolean;
+  canUseDiscount: boolean;
+  canUseIntercept: boolean;
+  canUseCollectTax: boolean;
+  canUseStealFirstClass: boolean;
 }
 
 interface GameState {
@@ -207,6 +212,7 @@ watchEffect(() => {
         character: p.character as 'seal' | 'capybara' | 'cat' | 'dog',
         position: p.position || 0,
         name: p.username,
+        username: p.username,
         in_jail: p.inJail || false,
         consecutive_doubles: p.consecutiveDoubles || 0,
         money: p.money ?? 1500,
@@ -218,7 +224,12 @@ watchEffect(() => {
           destination_id: prop.destinationId
         })),
         hereAndNowCards: p.hereAndNowCards || [],
-        chanceCards: p.chanceCards || []
+        chanceCards: p.chanceCards || [],
+        canUseSayNo: p.canUseSayNo || false,
+        canUseDiscount: p.canUseDiscount || false,
+        canUseIntercept: p.canUseIntercept || false,
+        canUseCollectTax: p.canUseCollectTax || false,
+        canUseStealFirstClass: p.canUseStealFirstClass || false
       }))
 
       // Detect money changes for animations

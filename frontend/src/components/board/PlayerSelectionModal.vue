@@ -19,7 +19,16 @@ const emit = defineEmits<{
 }>()
 
 const targetablePlayers = computed(() => {
-  return props.players.filter((_, idx) => idx !== props.selectorIdx);
+  return props.players.filter((p, idx) => {
+    if (idx === props.selectorIdx) return false;
+    
+    // Pentru acțiuni ce implică ștampile, ținta trebuie să aibă cel puțin una
+    if (['SwapStamps', 'swap_stamps', 'StealStampAndPay', 'SneakySwap', 'StealFirstClass'].includes(props.action)) {
+      return p.properties && p.properties.length > 0;
+    }
+    
+    return true;
+  });
 });
 
 const title = computed(() => {
@@ -29,6 +38,7 @@ const title = computed(() => {
     case 'dice_challenge':
     case 'DiceDuel': return 'Dice Duel Challenge';
     case 'StealFirstClass': return 'Steal First Class';
+    case 'StealStampAndPay': return 'Steal Stamp & Pay';
     default: return 'Select Player';
   }
 });
@@ -40,6 +50,7 @@ const actionText = computed(() => {
     case 'dice_challenge':
     case 'DiceDuel': return 'challenge to a duel';
     case 'StealFirstClass': return 'steal a First Class stamp from';
+    case 'StealStampAndPay': return 'steal a stamp from';
     default: return 'target';
   }
 });

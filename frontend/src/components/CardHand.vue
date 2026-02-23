@@ -100,6 +100,14 @@ const getCardStatus = (card: any) => {
     }
   }
 
+  // Steal First Class
+  if (desc.includes('steal another player\'s "first class" stamp')) {
+    const me = props.players.find(p => p.username === props.username);
+    if (me && !me.canUseStealFirstClass) {
+      return { playable: false, hint: 'No recent First Class by others' };
+    }
+  }
+
   return { playable: true, hint: 'Tap to play' };
 }
 

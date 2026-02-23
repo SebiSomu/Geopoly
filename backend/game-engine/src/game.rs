@@ -137,6 +137,7 @@ impl Game {
             self.players[i].can_use_discount = self.check_can_player_use_discount(i);
             self.players[i].can_use_intercept = self.check_can_player_use_intercept(i);
             self.players[i].can_use_collect_tax = self.check_can_player_use_collect_tax(i);
+            self.players[i].can_use_steal_first_class = self.check_can_player_use_steal_first_class(i);
         }
     }
 
@@ -186,6 +187,14 @@ impl Game {
                 false
             }
         })
+    }
+
+    pub fn check_can_player_use_steal_first_class(&self, player_idx: usize) -> bool {
+        if let Some(record) = &self.last_purchase {
+            record.is_first_class && record.buyer_idx != player_idx
+        } else {
+            false
+        }
     }
 
     pub fn roll_dice(&mut self) -> Result<TurnResult, String> {
@@ -749,56 +758,21 @@ impl Game {
 
                     let stamp = Stamp::first_class();
 
-                    // ✅ FIX: Logica de furt First Class DUPĂ plată
-                    let mut stealer_idx: Option<usize> = None;
-                    for i in 0..self.players.len() {
-                        if i != player_idx && self.players[i].steal_first_class_ready {
-                            println!("{}", format!("✈️ {} FURĂ ștampila First Class cu cardul Here&Now!", self.players[i].name).bright_magenta());
-                            stealer_idx = Some(i);
+                    // Transfer direct de la bancă la cumpărător
+                    self.history.push(GameAction::StampTransfer {
+                        from: None,
+                        to: Some(player_idx),
+                        stamp_name: "First Class".to_string(),
+                        stamp_id: "first_class".to_string(),
+                        is_first_class: true
+                    });
 
-                            self.players[i].steal_first_class_ready = false;
-                            if let Some(pos) = self.players[i].here_and_now_cards.iter().position(|c| matches!(c.action, HereAndNowCardAction::StealFirstClass)) {
-                                let card = self.players[i].here_and_now_cards.remove(pos);
-                                self.here_and_now_deck.discard(card);
-                            }
-                            break;
-                        }
-                    }
-
-                    let final_idx = stealer_idx.unwrap_or(player_idx);
-
-                    // Record StampTransfer
-                    if stealer_idx.is_some() {
-                        // Transfer de la cumpărător la fur
-                        self.history.push(GameAction::StampTransfer {
-                            from: Some(player_idx),
-                            to: Some(final_idx),
-                            stamp_name: "First Class".to_string(),
-                            stamp_id: "first_class".to_string(),
-                            is_first_class: true
-                        });
-                    } else {
-                        // Transfer direct de la bancă la cumpărător
-                        self.history.push(GameAction::StampTransfer {
-                            from: None,
-                            to: Some(final_idx),
-                            stamp_name: "First Class".to_string(),
-                            stamp_id: "first_class".to_string(),
-                            is_first_class: true
-                        });
-                    }
-
-                    self.players[final_idx].passport.add_stamp(stamp);
+                    self.players[player_idx].passport.add_stamp(stamp);
                     self.first_class_stamps_available -= 1;
 
-                    if stealer_idx.is_some() {
-                        println!("{}", format!("✅ {} a furat stampila Clasa Întâi de la {}!",
-                                 self.players[final_idx].name, self.players[player_idx].name).bright_green());
-                    } else {
-                        println!("{}", "✅ Ai cumpărat stampila Clasa Întâi!".green());
-                    }
+                    println!("{}", "✅ Ai cumpărat stampila Clasa Întâi!".green());
 
-                    self.check_and_handle_win(final_idx);
+                    self.check_and_handle_win(player_idx);
                 } else {
                     println!("{}", "Nu ai suficienți bani!".red());
                 }
@@ -936,6 +910,9 @@ impl Game {
             "SneakySwap" => {
                 self.handle_business_deal(selector_idx, Some(target_idx));
             }
+            "StealStampAndPay" => {
+                self.handle_steal_stamp_and_pay(selector_idx, target_idx);
+            }
             _ => return Err("Acțiune necunoscută".to_string())
         }
 
@@ -1048,16 +1025,22 @@ impl Game {
 
     /// Folosește un cartonaș Here&Now din mână
     pub fn use_here_and_now_card(&mut self, player_idx: usize, card_id: String) -> Result<TurnResult, String> {
-        let card_idx = self.players[player_idx].here_and_now_cards.iter().position(|c| c.id == card_id)
-            .ok_or_else(|| "Nu deții acest cartonaș!".to_string())?;
+        let card_id_inner = card_id.clone();
+        let card = self.players[player_idx].here_and_now_cards.iter().find(|c| c.id == card_id_inner)
+            .ok_or_else(|| "Nu deții acest cartonaș!".to_string())?.clone();
 
-        let card = self.players[player_idx].here_and_now_cards.remove(card_idx);
+        self.execute_here_and_now_action(player_idx, card.action.clone())?;
+        
+        // Remove only after success
+        if let Some(pos) = self.players[player_idx].here_and_now_cards.iter().position(|c| c.id == card_id) {
+            self.players[player_idx].here_and_now_cards.remove(pos);
+        }
+        
         let player_name = self.players[player_idx].name.clone();
         println!("🎭 {} folosește cartonașul: {}", player_name, card.description);
         self.log_action(Some(player_idx), format!("{} used treasure card: {}", player_name, card.description));
-
-        self.execute_here_and_now_action(player_idx, card.action.clone())?;
         self.here_and_now_deck.discard(card);
+        self.update_all_reactive_statuses();
 
         // Check if action put us in a wait state
         let turn_ends = match self.step {
@@ -1306,28 +1289,43 @@ impl Game {
                         },
                         GameAction::StampTransfer { to, stamp_name, .. } => {
                             if let Some(target_idx) = to {
-                                // A fost un transfer către altcineva -> îl luăm înapoi
-                                if let Some(pos) = self.players[target_idx].passport.find_stamp_index(&stamp_name) {
-                                    if let Some(s) = self.players[target_idx].passport.remove_stamp_at(pos) {
-                                        self.add_stamp_with_checks(player_idx, s);
-                                        println!("🛑 SAY NO! Transferul ștampilei {} a fost anulat.", stamp_name);
-                                        self.log_action(Some(player_idx), format!("Just Say No! Stamp {} recovered", stamp_name));
-
-                                        // ✅ FIX: Verificăm dacă a fost un schimb (Swap)
-                                        if idx_in_history > 0 {
-                                            if let Some(prev_action) = self.history.get(idx_in_history - 1).cloned() {
-                                                if let GameAction::StampTransfer { from: Some(f_idx), to: Some(t_idx), stamp_name: other_stamp_name, .. } = prev_action {
-                                                    if f_idx == target_idx && t_idx == player_idx {
-                                                        // A fost un schimb! Trebuie să dăm înapoi și ce am primit noi (A -> B, deci undo și B -> A)
-                                                        if let Some(pos_other) = self.players[player_idx].passport.find_stamp_index(&other_stamp_name) {
-                                                            if let Some(s_other) = self.players[player_idx].passport.remove_stamp_at(pos_other) {
-                                                                self.add_stamp_with_checks(target_idx, s_other);
-                                                                println!("🛑 Schimbul a fost anulat complet! {} a recuperat și '{}'.", self.players[target_idx].name, other_stamp_name);
-                                                            }
-                                                        }
-                                                    }
-                                                }
+                                // ✅ Verificăm dacă a fost un schimb (Swap)
+                                let mut swap_info = None;
+                                if idx_in_history > 0 {
+                                    if let Some(prev_action) = self.history.get(idx_in_history - 1).cloned() {
+                                        if let GameAction::StampTransfer { from: Some(f_idx), to: Some(t_idx), stamp_name: other_stamp_name, .. } = prev_action {
+                                            if f_idx == target_idx && t_idx == player_idx {
+                                                swap_info = Some((other_stamp_name, target_idx));
                                             }
+                                        }
+                                    }
+                                }
+
+                                if let Some((other_stamp_name, t_idx)) = swap_info {
+                                    // 🔄 REVERSAL ATOMIC PENTRU SCHIMB (SWAP)
+                                    // Găsim pozițiile ambelor ștampile
+                                    let pos_target = self.players[t_idx].passport.find_stamp_index(&stamp_name);
+                                    let pos_me = self.players[player_idx].passport.find_stamp_index(&other_stamp_name);
+
+                                    if let (Some(pa), Some(pb)) = (pos_target, pos_me) {
+                                        // Scoatem ambele ștampile înainte de a le adăuga la loc
+                                        let s_to_me = self.players[t_idx].passport.remove_stamp_at(pa);
+                                        let s_to_target = self.players[player_idx].passport.remove_stamp_at(pb);
+
+                                        if let (Some(sa), Some(sb)) = (s_to_me, s_to_target) {
+                                            self.add_stamp_with_checks(player_idx, sa);
+                                            self.add_stamp_with_checks(t_idx, sb);
+                                            println!("🛑 Schimb anulat ATOMIC! {} și {} și-au recuperat ștampilele în coloanele corecte.", self.players[player_idx].name, self.players[t_idx].name);
+                                            self.log_action(Some(player_idx), format!("Just Say No! Swap {} <-> {} reversed atomically", stamp_name, other_stamp_name));
+                                        }
+                                    }
+                                } else {
+                                    // 🔄 REVERSAL PENTRU TRANSFER SIMPLU
+                                    if let Some(pos) = self.players[target_idx].passport.find_stamp_index(&stamp_name) {
+                                        if let Some(s) = self.players[target_idx].passport.remove_stamp_at(pos) {
+                                            self.add_stamp_with_checks(player_idx, s);
+                                            println!("🛑 SAY NO! Transferul ștampilei {} a fost anulat.", stamp_name);
+                                            self.log_action(Some(player_idx), format!("Just Say No! Stamp {} recovered", stamp_name));
                                         }
                                     }
                                 }
@@ -1431,39 +1429,42 @@ impl Game {
                 }
             },
             HereAndNowCardAction::StealFirstClass => {
-                self.players[player_idx].steal_first_class_ready = true;
-                
-                  let steal_data = self.history.iter().rev().take(15).find_map(|action| {
-                    if let GameAction::StampTransfer { to, is_first_class: true, .. } = action {
-                         if let Some(t_idx) = to {
-                             if *t_idx != player_idx {
-                                 return Some(*t_idx);
-                             }
-                         }
+                let (target_idx, amount) = if let Some(record) = &self.last_purchase {
+                    if record.is_first_class && record.buyer_idx != player_idx {
+                        (record.buyer_idx, record.price)
+                    } else {
+                        return Err("Nu poți folosi acest card acum. Nicio ștampilă First Class nu a fost cumpărată recent de alți jucători.".to_string());
                     }
-                    None
-                });
+                } else {
+                    return Err("Nu poți folosi acest card acum.".to_string());
+                };
 
-                if let Some(target_idx) = steal_data {
-                     if let Some(stamp) = self.players[target_idx].passport.remove_last_stamp() {
-                         println!("✈️ STEAL FIRST CLASS REACTIV! Ai furat ștampila de la {}.", self.players[target_idx].name);
-                         
-                          let s_name = stamp.name.clone();
-                          let s_id = format!("{}", stamp.destination_id.unwrap_or(0));
-                          let is_fc = stamp.destination_id.is_none();
+                // Perform the steal
+                if let Some(stamp) = self.players[target_idx].passport.remove_last_stamp() {
+                    println!("✈️ STEAL FIRST CLASS REACTIV! Ai furat ștampila de la {}.", self.players[target_idx].name);
+                    
+                    // Refund the original buyer
+                    self.players[target_idx].add_money(amount);
+                    println!("💰 Jucătorul {} a fost despăgubit cu M{}.", self.players[target_idx].name, amount);
 
-                          // Record Transfer
-                          self.history.push(GameAction::StampTransfer {
-                              from: Some(target_idx),
-                              to: Some(player_idx),
-                              stamp_name: s_name,
-                              stamp_id: s_id,
-                              is_first_class: is_fc
-                          });
+                    let s_name = stamp.name.clone();
+                    let s_id = stamp.destination_id.map(|id| format!("{}", id)).unwrap_or_else(|| "first_class".to_string());
+                    let is_fc = true; // By definition for this card
 
-                          self.add_stamp_with_checks(player_idx, stamp);
-                         self.players[player_idx].steal_first_class_ready = false;
-                     }
+                    // Record the transfer in history
+                    self.history.push(GameAction::StampTransfer {
+                        from: Some(target_idx),
+                        to: Some(player_idx),
+                        stamp_name: s_name,
+                        stamp_id: s_id,
+                        is_first_class: is_fc
+                    });
+
+                    // Add stamp to the stealer
+                    self.add_stamp_with_checks(player_idx, stamp);
+                    self.log_action(Some(player_idx), format!("Steal First Class used against {}", self.players[target_idx].name));
+                } else {
+                    return Err("Jucătorul țintă nu mai are ștampila!".to_string());
                 }
             }
         }
@@ -1776,44 +1777,17 @@ impl Game {
                  }
             }
             ChanceCardAction::StealStampAndPay => {
-                 let target = (0..self.players.len()).find(|&i| i != idx);
-                 if let Some(t_idx) = target {
-                     if let Some(stamp) = self.players[t_idx].passport.remove_last_stamp() {
-                         // Găsim prețul real al proprietății
-                         let price = if stamp.destination_id.is_none() {
-                             100 // First Class are preț fix de 100
-                         } else {
-                             self.board.find_destination_by_name(&stamp.name)
-                                 .map(|d| d.price)
-                                 .unwrap_or(200) // Fallback generic
-                         };
-
-                         if self.players[idx].pay_money(price as i32) {
-                             self.players[t_idx].add_money(price as i32);
-                             self.history.push(GameAction::Payment {
-                                 from: Some(idx),
-                                 to: Some(t_idx),
-                                 amount: price as i32
-                             });
-                             
-                             let stamp_name = stamp.name.clone();
-                             let is_first_class = stamp.destination_id.is_none();
-                             
-                             self.history.push(GameAction::StampTransfer {
-                                 from: Some(t_idx),
-                                 to: Some(idx),
-                                 stamp_name: stamp.name.clone(),
-                                 stamp_id: format!("{}", stamp.destination_id.unwrap_or(0)),
-                                 is_first_class
-                             });
-                             
-                             self.add_stamp_with_checks(idx, stamp);
-                             println!("💸 Ai furat ștampila {} de la {} pentru M{}!", stamp_name, self.players[t_idx].name, price);
-                         } else {
-                             self.players[t_idx].passport.add_stamp(stamp); // returnăm
-                             println!("Nu ai destui bani să plătești ștampila (M{})!", price);
-                         }
-                     }
+                 let has_targets = self.players.iter().enumerate()
+                    .any(|(i, p)| i != idx && p.passport.stamp_count() > 0);
+                 
+                 if has_targets {
+                     self.step = GameStep::WaitingForTargetSelection {
+                         action: "StealStampAndPay".to_string(),
+                         card_id: None,
+                         selector_idx: idx
+                     };
+                 } else {
+                     println!("Niciun adversar nu are ștampile de furat!");
                  }
             }
         }
@@ -2178,6 +2152,49 @@ impl Game {
             } else {
                  println!("Niciun adversar nu are stampile!");
             }
+    }
+
+    fn handle_steal_stamp_and_pay(&mut self, player_idx: usize, target_idx: usize) {
+        if let Some(stamp) = self.players[target_idx].passport.remove_last_stamp() {
+            // Găsim prețul real al proprietății
+            let price = if stamp.destination_id.is_none() {
+                100 // First Class are preț fix de 100
+            } else {
+                self.board.find_destination_by_name(&stamp.name)
+                    .map(|d| d.price)
+                    .unwrap_or(200) // Fallback generic
+            };
+
+            if self.players[player_idx].pay_money(price as i32) {
+                self.players[target_idx].add_money(price as i32);
+                self.history.push(GameAction::Payment {
+                    from: Some(player_idx),
+                    to: Some(target_idx),
+                    amount: price as i32
+                });
+                
+                let stamp_name = stamp.name.clone();
+                let is_first_class = stamp.destination_id.is_none();
+                
+                self.history.push(GameAction::StampTransfer {
+                    from: Some(target_idx),
+                    to: Some(player_idx),
+                    stamp_name: stamp.name.clone(),
+                    stamp_id: format!("{}", stamp.destination_id.unwrap_or(0)),
+                    is_first_class
+                });
+                
+                self.add_stamp_with_checks(player_idx, stamp);
+                println!("💸 Ai furat ștampila {} de la {} pentru M{}!", stamp_name, self.players[target_idx].name, price);
+                self.log_action(Some(player_idx), format!("{} stole {} from {} for M{}", self.players[player_idx].name, stamp_name, self.players[target_idx].name, price));
+            } else {
+                // Dacă nu are bani, returnăm ștampila țintei
+                self.players[target_idx].passport.add_stamp(stamp);
+                println!("Nu ai destui bani să plătești ștampila (M{})!", price);
+            }
+        } else {
+            println!("Jucătorul țintă nu are nicio ștampilă de furat!");
+        }
     }
 
     /// Place a bid during an auction. Any player can bid.

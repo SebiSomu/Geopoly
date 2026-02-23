@@ -59,6 +59,8 @@ pub struct Player {
     pub can_use_intercept: bool,
     #[serde(default)]
     pub can_use_collect_tax: bool,
+    #[serde(default)]
+    pub can_use_steal_first_class: bool,
 }
 
 impl Default for Player {
@@ -77,6 +79,7 @@ impl Default for Player {
             can_use_discount: false,
             can_use_intercept: false,
             can_use_collect_tax: false,
+            can_use_steal_first_class: false,
         }
     }
 }

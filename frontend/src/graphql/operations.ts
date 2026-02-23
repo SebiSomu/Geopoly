@@ -149,6 +149,7 @@ export const GET_LOBBY_QUERY = gql`
         canUseDiscount
         canUseIntercept
         canUseCollectTax
+        canUseStealFirstClass
       }
     }
   }
