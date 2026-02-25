@@ -48,8 +48,8 @@ pub enum JailAction {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum GameAction {
-    Payment { from: Option<usize>, to: Option<usize>, amount: i32 },
-    StampTransfer { from: Option<usize>, to: Option<usize>, stamp_name: String, stamp_id: String, is_first_class: bool, initiator: Option<usize>, can_say_no: bool },
+    Payment { from: Option<usize>, to: Option<usize>, amount: i32, initiator: Option<usize> },
+    StampTransfer { from: Option<usize>, to: Option<usize>, stamp_name: String, stamp_id: String, is_first_class: bool, initiator: Option<usize> },
     GoToJail { player_idx: usize },
     Move { player_idx: usize, from: u8, to: u8 },
 }
@@ -150,9 +150,9 @@ impl Game {
     pub fn check_can_player_say_no(&self, player_idx: usize) -> bool {
         self.history.iter().rev().take(3).any(|action| {
              match action {
-                GameAction::Payment { from, to, .. } => *from == Some(player_idx) && to.is_some(),
-                GameAction::StampTransfer { from, initiator, can_say_no, .. } => 
-                    *from == Some(player_idx) && *initiator != Some(player_idx) && *can_say_no,
+                GameAction::Payment { from, to, initiator, .. } => *from == Some(player_idx) && to.is_some() && *initiator != Some(player_idx),
+                GameAction::StampTransfer { from, initiator, .. } => 
+                    *from == Some(player_idx) && *initiator != Some(player_idx),
                 _ => false
             }
         })
@@ -161,7 +161,7 @@ impl Game {
     pub fn check_can_player_use_discount(&self, player_idx: usize) -> bool {
         // 1. Reactive: recently paid > 100 to board
         let recently_paid = self.history.iter().rev().take(10).any(|action| {
-            if let GameAction::Payment { from, to: None, amount } = action {
+            if let GameAction::Payment { from, to: None, amount, .. } = action {
                 *from == Some(player_idx) && *amount > 100
             } else {
                 false
@@ -672,7 +672,8 @@ impl Game {
                         self.history.push(GameAction::Payment {
                             from: Some(player_idx),
                             to: None,
-                            amount: price
+                            amount: price,
+                            initiator: None
                         });
 
 
@@ -754,7 +755,8 @@ impl Game {
                     self.history.push(GameAction::Payment {
                         from: Some(player_idx),
                         to: None,
-                        amount: 100
+                        amount: 100,
+                        initiator: None
                     });
 
                     println!("{}", format!("✅ {} a plătit M100 pentru First Class!", self.players[player_idx].name).green());
@@ -771,8 +773,7 @@ impl Game {
                         stamp_name: "First Class".to_string(),
                         stamp_id: "first_class".to_string(),
                         is_first_class: true,
-                        initiator: Some(player_idx),
-                        can_say_no: true
+                        initiator: Some(player_idx)
                     });
 
                     self.players[player_idx].passport.add_stamp(stamp);
@@ -818,7 +819,8 @@ impl Game {
                  self.history.push(GameAction::Payment { 
                     from: Some(player_idx), 
                     to: None, 
-                    amount: 100
+                    amount: 100,
+                    initiator: None
                 });
                  println!("✅ Ai plătit M100 pentru zbor! Alege destinația.");
                  self.step = GameStep::WaitingForAirportDestination { buyer_idx: player_idx };
@@ -1021,7 +1023,8 @@ impl Game {
              self.history.push(GameAction::Payment { 
                  from: Some(target_idx), 
                  to: Some(challenger_idx), 
-                 amount: 100 
+                 amount: 100,
+                 initiator: None
              });
              let d_loser = self.players[target_idx].name.clone();
              let d_winner = self.players[challenger_idx].name.clone();
@@ -1033,7 +1036,8 @@ impl Game {
              self.history.push(GameAction::Payment { 
                  from: Some(challenger_idx), 
                  to: Some(target_idx), 
-                 amount: 100 
+                 amount: 100,
+                 initiator: None
              });
              let d_loser2 = self.players[challenger_idx].name.clone();
              let d_winner2 = self.players[target_idx].name.clone();
@@ -1152,7 +1156,6 @@ impl Game {
                                  stamp_id: format!("{}", stamp.destination_id.unwrap_or(0)),
                                  is_first_class: stamp.destination_id.is_none(),
                                  initiator: Some(player_idx),
-                                 can_say_no: true
                              });
                         }
                     }
@@ -1222,7 +1225,8 @@ impl Game {
                         self.history.push(GameAction::Payment {
                             from: Some(idx),
                             to: Some(player_idx),
-                            amount: actual_amount
+                            amount: actual_amount,
+                            initiator: None
                         });
                         self.log_action(Some(idx), format!("{} paid M{} to {}", self.players[idx].name, actual_amount, self.players[player_idx].name));
                     }
@@ -1257,8 +1261,8 @@ impl Game {
                                  println!("🎯 INTERCEPT! {} a preluat '{}' de la {} pentru M{}!", 
                                           self.players[player_idx].name, stamp_name, self.players[old_buyer_idx].name, price);
                                 
-                                 self.history.push(GameAction::Payment { from: Some(player_idx), to: None, amount: price });
-                                 self.history.push(GameAction::Payment { from: None, to: Some(old_buyer_idx), amount: price });
+                                 self.history.push(GameAction::Payment { from: Some(player_idx), to: None, amount: price, initiator: None });
+                                 self.history.push(GameAction::Payment { from: None, to: Some(old_buyer_idx), amount: price, initiator: None });
 
                                  self.history.push(GameAction::StampTransfer { 
                                      from: Some(old_buyer_idx), 
@@ -1266,8 +1270,7 @@ impl Game {
                                      stamp_name: stamp_name.clone(), 
                                      stamp_id: s_id,
                                      is_first_class: is_fc,
-                                     initiator: Some(player_idx),
-                                     can_say_no: true,
+                                     initiator: Some(player_idx)
                                  });
 
                                  self.log_action(Some(player_idx), format!("{} intercepted {} from {}", self.players[player_idx].name, stamp_name, self.players[old_buyer_idx].name));
@@ -1291,7 +1294,7 @@ impl Game {
                 let found_revert = self.history.iter().enumerate().rev().take(3)
                     .find_map(|(i, action)| {
                         match action {
-                            GameAction::Payment { from, to, amount } if *from == Some(player_idx) && to.is_some() => {
+            GameAction::Payment { from, to, amount, initiator } if *from == Some(player_idx) && to.is_some() && *initiator != Some(player_idx) => {
                                 Some((i, action.clone()))
                             },
                             GameAction::StampTransfer { from, initiator, .. } if *from == Some(player_idx) && *initiator != Some(player_idx) => {
@@ -1394,7 +1397,7 @@ impl Game {
                 }
 
                 let refund_data = self.history.iter().rev().take(10).find_map(|action| {
-                    if let GameAction::Payment { from, to: None, amount } = action {
+                    if let GameAction::Payment { from, to: None, amount, .. } = action {
                         if *from == Some(player_idx) && *amount > 100 {
                             return Some(*amount - 100);
                         }
@@ -1411,7 +1414,7 @@ impl Game {
             HereAndNowCardAction::CollectTax => {
                 // ✅ Verificăm dacă tocmai am plătit o taxă unui adversar (în ultimele 10 acțiuni)
                 let found_revert = self.history.iter().rev().take(10).find_map(|action| {
-                    if let GameAction::Payment { from, to: Some(receiver_idx), amount } = action {
+                    if let GameAction::Payment { from, to: Some(receiver_idx), amount, .. } = action {
                         if *from == Some(player_idx) {
                              return Some((*receiver_idx, *amount));
                         }
@@ -1439,7 +1442,8 @@ impl Game {
                              self.history.push(GameAction::Payment {
                                  from: Some(receiver_idx),
                                  to: Some(player_idx),
-                                 amount: amount * 2
+                                 amount: amount * 2,
+                                 initiator: None
                              });
                         } else {
                              println!("🧾 COLLECT TAX REACTIV! Plata de M{} a fost anulată, dar {} nu mai are bani să-ți plătească taxa!", amount, self.players[receiver_idx].name);
@@ -1479,7 +1483,6 @@ impl Game {
                         stamp_id: s_id,
                         is_first_class: is_fc,
                         initiator: Some(player_idx),
-                        can_say_no: true,
                     });
 
                     // Add stamp to the stealer
@@ -1580,9 +1583,10 @@ impl Game {
             // Record partial move or just payment? 
             // START money is a transaction from Bank
             self.history.push(GameAction::Payment { 
-                from: None, // Bank
+                from: None, 
                 to: Some(player_idx), 
-                amount: 200 
+                amount: 200,
+                initiator: None 
             });
             let name = self.players[player_idx].name.clone();
             self.log_action(Some(player_idx), format!("{} landed on Start and received $200", name));
@@ -1640,7 +1644,8 @@ impl Game {
                 self.history.push(GameAction::Payment { 
                     from: None, 
                     to: Some(idx), 
-                    amount: amount as i32
+                    amount: amount as i32,
+                    initiator: None
                 });
                 println!("{}", format!("Primești M{}", amount).green());
             }
@@ -1655,7 +1660,8 @@ impl Game {
                     self.history.push(GameAction::Payment { 
                         from: Some(idx), 
                         to: None, 
-                        amount 
+                        amount,
+                        initiator: None
                     });
                 }
             }
@@ -1674,7 +1680,8 @@ impl Game {
                 self.history.push(GameAction::Payment { 
                     from: None, 
                     to: Some(idx), 
-                    amount: gain as i32 
+                    amount: gain as i32,
+                    initiator: None 
                 });
             }
 
@@ -1687,7 +1694,8 @@ impl Game {
                             self.history.push(GameAction::Payment { 
                                 from: Some(i), 
                                 to: Some(idx), 
-                                amount: amount as i32
+                                amount: amount as i32,
+                                initiator: None
                             });
                         } else {
                             println!("{}", format!("{} nu are bani suficienți!", self.players[i].name).yellow());
@@ -1715,7 +1723,8 @@ impl Game {
                 self.history.push(GameAction::Payment {
                     from: None,
                     to: Some(idx),
-                    amount: 200
+                    amount: 200,
+                    initiator: None
                 });
             }
 
@@ -1786,7 +1795,6 @@ impl Game {
                                  stamp_id: format!("{}", s1.destination_id.unwrap_or(0)),
                                  is_first_class: s1.destination_id.is_none(),
                                  initiator: None,
-                                 can_say_no: true,
                              });
                              self.history.push(GameAction::StampTransfer {
                                  from: Some(p2_idx),
@@ -1795,7 +1803,6 @@ impl Game {
                                  stamp_id: format!("{}", s2.destination_id.unwrap_or(0)),
                                  is_first_class: s2.destination_id.is_none(),
                                  initiator: None,
-                                 can_say_no: true,
                              });
 
                              self.log_action(None, format!("♻️ Sneaky Swap: {} and {} swapped stamps!", self.players[p1_idx].name, self.players[p2_idx].name));
@@ -1909,7 +1916,8 @@ impl Game {
                         self.history.push(GameAction::Payment {
                             from: Some(owner_idx),
                             to: Some(player_idx),
-                            amount: tax as i32
+                            amount: tax as i32,
+                            initiator: None
                         });
                         println!("{}", format!("{} îți plătește M{}", self.players[owner_idx].name, tax).green());
                     } else {
@@ -1934,7 +1942,8 @@ impl Game {
                     self.history.push(GameAction::Payment {
                         from: Some(player_idx),
                         to: Some(owner_idx),
-                        amount: tax as i32
+                        amount: tax as i32,
+                        initiator: None
                     });
                     let payer = self.players[player_idx].name.clone();
                     let receiver = self.players[owner_idx].name.clone();
@@ -2107,7 +2116,6 @@ impl Game {
                         stamp_id: format!("{}", my_stamp.destination_id.unwrap_or(0)),
                         is_first_class: my_stamp.destination_id.is_none(),
                         initiator: Some(player_idx),
-                        can_say_no: true,
                     });
 
                     self.history.push(GameAction::StampTransfer {
@@ -2117,7 +2125,6 @@ impl Game {
                         stamp_id: format!("{}", opp_stamp.destination_id.unwrap_or(0)),
                         is_first_class: opp_stamp.destination_id.is_none(),
                         initiator: Some(player_idx),
-                        can_say_no: true,
                     });
 
                     let my_s_name = my_stamp.name.clone();
@@ -2181,7 +2188,6 @@ impl Game {
                          stamp_id: format!("{}", stamp1.destination_id.unwrap_or(0)),
                          is_first_class: stamp1.destination_id.is_none(),
                          initiator: Some(player_idx),
-                         can_say_no: true,
                      });
 
                      self.history.push(GameAction::StampTransfer {
@@ -2191,7 +2197,6 @@ impl Game {
                          stamp_id: format!("{}", stamp2.destination_id.unwrap_or(0)),
                          is_first_class: stamp2.destination_id.is_none(),
                          initiator: Some(player_idx),
-                         can_say_no: true,
                      });
                      
                      self.add_stamp_with_checks(player_idx, stamp2.clone());
@@ -2227,7 +2232,8 @@ impl Game {
                 self.history.push(GameAction::Payment {
                     from: Some(player_idx),
                     to: Some(target_idx),
-                    amount: price as i32
+                    amount: price as i32,
+                    initiator: Some(player_idx)
                 });
                 
                 let stamp_name = stamp.name.clone();
@@ -2240,7 +2246,6 @@ impl Game {
                     stamp_id: format!("{}", stamp.destination_id.unwrap_or(0)),
                     is_first_class,
                     initiator: Some(player_idx),
-                    can_say_no: false // ACEST CAZ ESTE EXCLUS de la Just Say No!
                 });
                 
                 self.add_stamp_with_checks(player_idx, stamp);
@@ -2309,6 +2314,7 @@ impl Game {
                         from: Some(winner_idx),
                         to: None,
                         amount: current_bid,
+                        initiator: None
                     });
                     println!("{}", format!("🔨 {} wins the auction for M{}!", self.players[winner_idx].name, current_bid).bright_green());
                     let a_name = self.players[winner_idx].name.clone();
@@ -2342,15 +2348,14 @@ impl Game {
         let stamp = Stamp::from_destination(dest);
         println!("{}", format!("✅ {} a cumpărat destinația {} și a primit stampila!", self.players[player_idx].name, dest.name).green());
         
-        self.history.push(GameAction::StampTransfer {
-                    from: None,
-                    to: Some(player_idx),
-                    stamp_name: stamp.name.clone(),
-                    stamp_id: format!("{}", dest.id),
-                    is_first_class: false,
-                    initiator: Some(player_idx),
-                    can_say_no: true,
-                });
+                    self.history.push(GameAction::StampTransfer {
+                                from: None,
+                                to: Some(player_idx),
+                                stamp_name: stamp.name.clone(),
+                                stamp_id: format!("{}", dest.id),
+                                is_first_class: false,
+                                initiator: Some(player_idx),
+                            });
 
         let name = self.players[player_idx].name.clone();
         let dest_name = dest.name.clone();

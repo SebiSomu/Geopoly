@@ -6,13 +6,15 @@ interface Props {
   value2?: number  // 1-6
   isRolling?: boolean
   forcedDeal?: boolean
+  showSecond?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
   value1: 1,
   value2: 3,
   isRolling: false,
-  forcedDeal: false
+  forcedDeal: false,
+  showSecond: true
 })
 
 // Standard dice: 1 opposite 6, 2 opposite 5, 3 opposite 4
@@ -113,7 +115,7 @@ const dice2Transform = computed(() => {
     </div>
 
     <!-- Dice 2 (identical face layout) -->
-    <div class="dice-scene">
+    <div class="dice-scene" v-if="showSecond">
       <div class="dice dice-2" :style="{ transform: dice2Transform }">
         <!-- Front face: 1 pip -->
         <div class="face front">

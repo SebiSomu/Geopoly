@@ -103,6 +103,7 @@ interface GameState {
   auctionTimer: number;
   activityLog: Array<{ playerIdx: number | null; message: string }>;
   isJailDecision: boolean;
+  rerollCue: { value: number } | null;
 }
 
 // Game simulation state (local representation of server state)
@@ -129,6 +130,7 @@ const gameState = reactive<GameState>({
   auctionTimer: 0,
   activityLog: [],
   isJailDecision: false,
+  rerollCue: null,
 })
 
 let auctionInterval: any = null;
@@ -198,13 +200,22 @@ watchEffect(() => {
       gameState.pendingAuction = lobby.gameState.pendingAuction || null
       gameState.activityLog = lobby.gameState.activityLog || []
 
-      // Sync turn and dice, BUT only if we are not currently animating a roll ourselves
       if (!gameState.isRolling && !gameState.isMoving) {
+        const ld1 = lobby.gameState.lastDie1
+        const ld2 = lobby.gameState.lastDie2
         gameState.currentTurnIndex = lobby.gameState.currentTurnIndex
-        if (lobby.gameState.lastDie1) gameState.diceValue1 = lobby.gameState.lastDie1
-        if (lobby.gameState.lastDie2) gameState.diceValue2 = lobby.gameState.lastDie2
+        if (typeof ld1 === 'number') gameState.diceValue1 = ld1
+        if (typeof ld2 === 'number') gameState.diceValue2 = ld2
         gameState.awaitingAction = lobby.gameState.awaitingAction
         gameState.isJailDecision = lobby.gameState.isJailDecision || false
+        if (typeof ld2 === 'number' && ld2 === 0 && typeof ld1 === 'number' && ld1 > 0) {
+          gameState.isRolling = true
+          gameState.rerollCue = { value: ld1 }
+          setTimeout(() => {
+            gameState.isRolling = false
+            gameState.rerollCue = null
+          }, 800)
+        }
       }
       gameState.forcedDealActive = lobby.gameState.isForcedDeal
     }
@@ -1192,8 +1203,8 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
               </div>
 
               <!-- Dice Panel (Normal or Duel) -->
+              <div v-if="gameState.rerollCue" style="position:absolute; top:-8px; left:50%; transform:translateX(-50%); font-family:'Oswald',sans-serif; font-size:18px; font-weight:700; color:#ffd32a; text-shadow:0 2px 4px rgba(0,0,0,0.6);">🎲 REROLL {{ gameState.rerollCue.value }}</div>
               <DicePanel 
-                v-else
                 :diceValue1="gameState.diceValue1" 
                 :diceValue2="gameState.diceValue2" 
                 :isRolling="gameState.isRolling"
@@ -1205,6 +1216,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                 :username="username || ''"
                 :isDuel="!!gameState.diceDuel"
                 :duelData="gameState.diceDuel ?? undefined"
+                :singleDieValue="gameState.rerollCue ? gameState.rerollCue.value : null"
                 @roll="rollDice"
                 @rollDuel="handleRollDuelDice"
                 @finish-duel="handleFinishDuel"
