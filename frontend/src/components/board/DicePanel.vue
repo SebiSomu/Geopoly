@@ -24,7 +24,6 @@ interface Props {
   forcedDealActive?: boolean
   username?: string
   players: Player[]
-  singleDieValue?: number | null
   
   // Normal Mode Props
   diceValue1?: number
@@ -47,8 +46,7 @@ const props = withDefaults(defineProps<Props>(), {
   isDuel: false,
   duelData: null,
   players: () => [],
-  username: '',
-  singleDieValue: null
+  username: ''
 })
 
 const emit = defineEmits<{
@@ -160,15 +158,14 @@ const buttonText = computed(() => props.isDuel ? 'ROLL DICE' : 'ROLL')
       </div>
 
       <GameDice 
-        :value1="singleDieValue !== null ? singleDieValue! : d1" 
+        :value1="d1" 
         :value2="d2" 
         :isRolling="isRolling"
         :forcedDeal="!isDuel && diceValue1 === 1"
-        :showSecond="singleDieValue === null"
       />
       
       <button 
-        v-if="(nextRollerIdx !== -1 || !isDuel) && singleDieValue === null"
+        v-if="nextRollerIdx !== -1 || !isDuel"
         class="roll-button" 
         :class="{ 'duel-btn': isDuel }"
         @click="handleRollClick"
