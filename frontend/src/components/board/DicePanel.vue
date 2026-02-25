@@ -34,6 +34,9 @@ interface Props {
   // Duel Mode Props
   isDuel?: boolean
   duelData?: DuelData | null
+  
+  // Reroll Dice Props
+  isRerollDice?: boolean
 }
 
 const props = withDefaults(defineProps<Props>(), {
@@ -45,6 +48,7 @@ const props = withDefaults(defineProps<Props>(), {
   isMyTurn: false,
   isDuel: false,
   duelData: null,
+  isRerollDice: false,
   players: () => [],
   username: ''
 })
@@ -132,12 +136,21 @@ const isButtonDisabled = computed(() => {
   return !props.isMyTurn || props.isRolling || props.isMoving || props.forcedDealActive
 })
 
-const buttonText = computed(() => props.isDuel ? 'ROLL DICE' : 'ROLL')
+const buttonText = computed(() => {
+  if (props.isRerollDice) return 'ROLL REROLL DICE'
+  return props.isDuel ? 'ROLL DICE' : 'ROLL'
+})
 </script>
 
 <template>
-  <div class="dice-panel-wrapper" :class="{ 'duel-mode': isDuel }">
+  <div class="dice-panel-wrapper" :class="{ 'duel-mode': isDuel, 'reroll-mode': isRerollDice }">
     <div class="dice-control-panel">
+      <!-- Title for Reroll Dice -->
+      <div v-if="isRerollDice" class="reroll-title-area">
+        <h2 class="reroll-heading">🎲 REROLL DICE 🎲</h2>
+        <div class="reroll-subtitle">Chance Card: Reroll one die!</div>
+      </div>
+      
       <!-- Title for Duel -->
       <div v-if="isDuel" class="duel-title-area">
         <h2 class="duel-heading">⚔️ DICE DUEL ⚔️</h2>
@@ -157,7 +170,18 @@ const buttonText = computed(() => props.isDuel ? 'ROLL DICE' : 'ROLL')
         </div>
       </div>
 
+      <!-- Reroll Dice (Single Die) -->
+      <GameDice
+        v-if="isRerollDice"
+        :value1="d1"
+        :value2="0"
+        :isRolling="isRolling"
+        :forcedDeal="false"
+      />
+      
+      <!-- Normal or Duel Dice (Two Dice) -->
       <GameDice 
+        v-else
         :value1="d1" 
         :value2="d2" 
         :isRolling="isRolling"
@@ -187,7 +211,11 @@ const buttonText = computed(() => props.isDuel ? 'ROLL DICE' : 'ROLL')
 
       <!-- Status Indicator -->
       <div class="turn-indicator">
-        <template v-if="isDuel">
+        <template v-if="isRerollDice">
+          <span v-if="isMyTurn">Reroll your dice!</span>
+          <span v-else>{{ currentPlayerName }} is rerolling...</span>
+        </template>
+        <template v-else-if="isDuel">
           <span v-if="nextRollerIdx !== -1">
             {{ isMyTurnToRollDuel ? 'Your' : nextRollerName + "'s" }} Turn
           </span>
@@ -237,6 +265,35 @@ const buttonText = computed(() => props.isDuel ? 'ROLL DICE' : 'ROLL')
   box-shadow: 
     0 30px 70px rgba(0, 0, 0, 0.6),
     0 0 30px rgba(245, 194, 231, 0.1);
+}
+
+/* Reroll specific panel styles */
+.reroll-mode .dice-control-panel {
+  border-color: rgba(166, 227, 161, 0.3);
+  box-shadow: 
+    0 30px 70px rgba(0, 0, 0, 0.6),
+    0 0 30px rgba(166, 227, 161, 0.1);
+}
+
+.reroll-title-area {
+  margin-bottom: -8px;
+  text-align: center;
+}
+
+.reroll-heading {
+  font-size: 1.1rem;
+  font-weight: 900;
+  color: #a6e3a1;
+  letter-spacing: 4px;
+  margin: 0;
+  text-shadow: 0 0 20px rgba(166, 227, 161, 0.4);
+}
+
+.reroll-subtitle {
+  color: #94a3b8;
+  font-size: 0.8rem;
+  font-weight: 600;
+  margin-top: 4px;
 }
 
 .duel-title-area {

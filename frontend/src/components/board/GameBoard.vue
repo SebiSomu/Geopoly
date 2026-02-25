@@ -103,6 +103,7 @@ interface GameState {
   auctionTimer: number;
   activityLog: Array<{ playerIdx: number | null; message: string }>;
   isJailDecision: boolean;
+  isRerollDice: boolean;
 }
 
 // Game simulation state (local representation of server state)
@@ -129,6 +130,7 @@ const gameState = reactive<GameState>({
   auctionTimer: 0,
   activityLog: [],
   isJailDecision: false,
+  isRerollDice: false,
 })
 
 let auctionInterval: any = null;
@@ -205,6 +207,7 @@ watchEffect(() => {
         if (lobby.gameState.lastDie2) gameState.diceValue2 = lobby.gameState.lastDie2
         gameState.awaitingAction = lobby.gameState.awaitingAction
         gameState.isJailDecision = lobby.gameState.isJailDecision || false
+        gameState.isRerollDice = lobby.gameState.isRerollDice || false
       }
       gameState.forcedDealActive = lobby.gameState.isForcedDeal
     }
@@ -1191,7 +1194,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                  </template>
               </div>
 
-              <!-- Dice Panel (Normal or Duel) -->
+              <!-- Dice Panel (Normal, Duel, or Reroll) -->
               <DicePanel 
                 v-else
                 :diceValue1="gameState.diceValue1" 
@@ -1205,6 +1208,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                 :username="username || ''"
                 :isDuel="!!gameState.diceDuel"
                 :duelData="gameState.diceDuel ?? undefined"
+                :isRerollDice="gameState.isRerollDice"
                 @roll="rollDice"
                 @rollDuel="handleRollDuelDice"
                 @finish-duel="handleFinishDuel"

@@ -113,7 +113,7 @@ const dice2Transform = computed(() => {
     </div>
 
     <!-- Dice 2 (identical face layout) -->
-    <div class="dice-scene">
+    <div v-if="value2 !== 0" class="dice-scene">
       <div class="dice dice-2" :style="{ transform: dice2Transform }">
         <!-- Front face: 1 pip -->
         <div class="face front">

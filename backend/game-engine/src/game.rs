@@ -37,6 +37,13 @@ pub enum GameStep {
     },
     WaitingForAuction { dest_id: u8, current_bid: i32, highest_bidder: Option<usize> },
     WaitingForJailDecision,
+    WaitingForRerollDice { player_idx: usize },
+}
+
+// Add a helper struct to track pending reroll state
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct PendingReroll {
+    pub player_idx: usize,
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -96,6 +103,7 @@ pub struct Game {
     pub history: Vec<GameAction>,
     pub activity_log: Vec<ActivityLogEntry>,
     pub last_purchase: Option<PurchaseRecord>,
+    pub pending_reroll: Option<PendingReroll>,
 }
 
 impl Game {
@@ -129,6 +137,7 @@ impl Game {
             history: Vec::new(),
             activity_log: Vec::new(),
             last_purchase: None,
+            pending_reroll: None,
         }
     }
 
@@ -207,8 +216,16 @@ impl Game {
         if self.game_over {
             return Err("Game is over".to_string());
         }
-        if self.step != GameStep::WaitingForRoll {
+        if !matches!(self.step, GameStep::WaitingForRoll | GameStep::WaitingForRerollDice { .. }) {
             return Err("Not waiting for roll".to_string());
+        }
+        
+        // Handle reroll dice case
+        if let GameStep::WaitingForRerollDice { player_idx } = self.step {
+            if self.current_player_idx != player_idx {
+                return Err("Not your turn to reroll".to_string());
+            }
+            return self.resolve_reroll_dice();
         }
 
         let player_idx = self.current_player_idx;
@@ -242,7 +259,8 @@ impl Game {
                         GameStep::WaitingForTargetSelection { .. } |
                         GameStep::WaitingForDiceDuel { .. } |
                         GameStep::WaitingForAuction { .. } |
-                        GameStep::WaitingForForcedDeal => false,
+                        GameStep::WaitingForForcedDeal |
+                        GameStep::WaitingForRerollDice { .. } => false,
                         _ => true,
                     };
 
@@ -292,7 +310,8 @@ impl Game {
                         GameStep::WaitingForTargetSelection { .. } |
                         GameStep::WaitingForDiceDuel { .. } |
                         GameStep::WaitingForAuction { .. } |
-                        GameStep::WaitingForForcedDeal => false,
+                        GameStep::WaitingForForcedDeal |
+                        GameStep::WaitingForRerollDice { .. } => false,
                         _ => true,
                     };
 
@@ -359,14 +378,15 @@ impl Game {
                 }
 
                 // If a decision is pending, turn stops for input but doesn't technically end (still same player's turn context)
-                let pending_decision = matches!(self.step, 
+                let pending_decision = matches!(self.step,
                     GameStep::WaitingForTargetSelection { .. } |
                     GameStep::WaitingForDiceDuel { .. } |
-                    GameStep::WaitingForPurchaseDecision { .. } | 
+                    GameStep::WaitingForPurchaseDecision { .. } |
                     GameStep::WaitingForFirstClassDecision { .. } |
                     GameStep::WaitingForAirportDecision { .. } |
                     GameStep::WaitingForAirportDestination { .. } |
-                    GameStep::WaitingForAuction { .. }
+                    GameStep::WaitingForAuction { .. } |
+                    GameStep::WaitingForRerollDice { .. }
                 );
                 
                 Ok(TurnResult {
@@ -479,7 +499,8 @@ impl Game {
                         GameStep::WaitingForTargetSelection { .. } |
                         GameStep::WaitingForDiceDuel { .. } |
                         GameStep::WaitingForAuction { .. } |
-                        GameStep::WaitingForForcedDeal => false,
+                        GameStep::WaitingForForcedDeal |
+                        GameStep::WaitingForRerollDice { .. } => false,
                         _ => true,
                     };
 
@@ -574,8 +595,68 @@ impl Game {
         }
     }
 
+    pub fn resolve_reroll_dice(&mut self) -> Result<TurnResult, String> {
+        if let GameStep::WaitingForRerollDice { player_idx } = self.step {
+            if self.current_player_idx != player_idx {
+                return Err("Not your turn to reroll".to_string());
+            }
+
+            let mut rng = rand::thread_rng();
+            let d = rng.gen_range(1..=6);
+            let old_pos = self.players[player_idx].position;
+            println!("{}", format!("Arunci din nou zarul: {}. Te muți {} spații.", d, d).cyan());
+            
+            self.move_player(d as i32);
+            let new_pos = self.players[player_idx].position;
+            
+            self.history.push(GameAction::Move {
+                player_idx,
+                from: old_pos as u8,
+                to: new_pos as u8
+            });
+            
+            self.handle_landing(player_idx);
+            
+            // Check if there are pending decisions that need to be made
+            let has_pending_decision = matches!(self.step,
+                GameStep::WaitingForPurchaseDecision { .. } |
+                GameStep::WaitingForFirstClassDecision { .. } |
+                GameStep::WaitingForAirportDecision { .. } |
+                GameStep::WaitingForAirportDestination { .. } |
+                GameStep::WaitingForTargetSelection { .. } |
+                GameStep::WaitingForDiceDuel { .. } |
+                GameStep::WaitingForAuction { .. } |
+                GameStep::WaitingForForcedDeal
+            );
+
+            // Clear the pending reroll state - player has used their reroll
+            self.pending_reroll = None;
+
+            if has_pending_decision {
+                // Keep the current step (the decision state) - don't end turn yet
+            } else {
+                // No pending decision - end the turn, no more rerolls allowed
+                self.step = GameStep::WaitingForRoll;
+                self.end_turn();
+            }
+
+            Ok(TurnResult {
+                die1: d,
+                die2: 0,
+                is_double: false,
+                is_forced_deal: false,
+                new_position: self.players[player_idx].position as u8,
+                went_to_jail: false,
+                turn_ends: !has_pending_decision,
+                current_player_index: self.current_player_idx as u8,
+            })
+        } else {
+            Err("Not waiting for reroll dice".to_string())
+        }
+    }
+
     pub fn resolve_forced_deal(&mut self, action: &str, target_name: Option<String>) -> Result<TurnResult, String> {
-            if self.step != GameStep::WaitingForForcedDeal {
+        if self.step != GameStep::WaitingForForcedDeal {
                 return Err("Not waiting for forced deal".to_string());
             }
 
@@ -623,7 +704,8 @@ impl Game {
                 GameStep::WaitingForAirportDestination { .. } |
                 GameStep::WaitingForTargetSelection { .. } |
                 GameStep::WaitingForDiceDuel { .. } |
-                GameStep::WaitingForAuction { .. } => false,  // Așteaptă decizie
+                GameStep::WaitingForAuction { .. } |
+                GameStep::WaitingForRerollDice { .. } => false,  // Așteaptă decizie
                 _ => true,  // Altfel, tura se încheie
             };
 
@@ -931,8 +1013,33 @@ impl Game {
         let is_duel = matches!(self.step, GameStep::WaitingForDiceDuel { .. });
         
         if !is_duel {
-             self.step = GameStep::WaitingForRoll;
-             if selector_idx == self.current_player_idx { self.end_turn(); }
+            // Check if this action was initiated by the current player or by another player
+            let action_by_current_player = selector_idx == self.current_player_idx;
+            
+            if action_by_current_player {
+                // Current player used a card - restore their reroll or end turn
+                if let Some(pending_reroll) = &self.pending_reroll {
+                    if pending_reroll.player_idx == selector_idx {
+                        self.step = GameStep::WaitingForRerollDice { player_idx: selector_idx };
+                    } else {
+                        self.step = GameStep::WaitingForRoll;
+                        self.end_turn();
+                    }
+                } else {
+                    self.step = GameStep::WaitingForRoll;
+                    self.end_turn();
+                }
+            } else {
+                // Another player used a reactive card against the current player
+                // Preserve the current player's reroll state - they should still get to roll the reroll
+                if self.pending_reroll.is_some() {
+                    // Restore reroll state for the current player
+                    self.step = GameStep::WaitingForRerollDice { player_idx: self.current_player_idx };
+                } else {
+                    // No reroll pending, just continue with normal turn
+                    self.step = GameStep::WaitingForRoll;
+                }
+            }
         }
 
         Ok(TurnResult {
@@ -1079,9 +1186,14 @@ impl Game {
              GameStep::WaitingForFirstClassDecision { .. } | 
              GameStep::WaitingForAirportDecision { .. } | 
              GameStep::WaitingForAirportDestination { .. } | 
-             GameStep::WaitingForForcedDeal => false,
-             _ => false // Usually using a card doesn't end turn unless it was the main action, but here we assume it's additive?
-             // Actually, use_here_and_now can be used out of turn.
+             GameStep::WaitingForForcedDeal |
+             GameStep::WaitingForRerollDice { .. } => false,
+             _ => {
+                 // After using a Here & Now card, stay in current state
+                 // (player can still roll the reroll die if they have one pending)
+                 // Don't end the turn yet
+                 false
+             }
         };
         
         Ok(TurnResult {
@@ -1745,21 +1857,9 @@ impl Game {
             }
 
             ChanceCardAction::RerollOneDie => {
-                let mut rng = rand::thread_rng();
-                let d = rng.gen_range(1..=6);
-                let old_pos = self.players[idx].position;
-                println!("{}", format!("Arunci încă un zar: {}. Te muți {} spații.", d, d).cyan());
-                
-                self.move_player(d);
-                let new_pos = self.players[idx].position;
-                
-                self.history.push(GameAction::Move {
-                    player_idx: idx,
-                    from: old_pos as u8,
-                    to: new_pos as u8
-                });
-                
-                self.handle_landing(idx);
+                println!("{}" , "Ai primit o carte de șansă: Aruncă din nou un zar!".cyan());
+                self.step = GameStep::WaitingForRerollDice { player_idx: idx };
+                self.pending_reroll = Some(PendingReroll { player_idx: idx });
             }
 
             ChanceCardAction::DiceChallenge => {

@@ -122,6 +122,7 @@ export const GET_LOBBY_QUERY = gql`
           message
         }
         isJailDecision
+        isRerollDice
       }
       players {
         username

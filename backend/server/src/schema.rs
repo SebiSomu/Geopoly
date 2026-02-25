@@ -69,6 +69,7 @@ pub struct GameStateDisplay {
     pub dice_duel: Option<DiceDuelData>,
     pub pending_auction: Option<AuctionData>,
     pub is_jail_decision: bool,
+    pub is_reroll_dice: bool,
     pub activity_log: Vec<ActivityLogEntryDisplay>,
 }
 
@@ -185,6 +186,7 @@ impl Lobby {
                 dice_duel,
                 pending_auction,
                 is_jail_decision: game.step == GameStep::WaitingForJailDecision,
+                is_reroll_dice: matches!(game.step, GameStep::WaitingForRerollDice { .. }),
                 activity_log: game.activity_log.iter().rev().take(5).map(|e| ActivityLogEntryDisplay {
                     player_idx: e.player_idx.map(|i| i as u8),
                     message: e.message.clone(),
