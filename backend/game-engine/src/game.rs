@@ -1611,21 +1611,38 @@ impl Game {
                 }
             },
             HereAndNowCardAction::StealFirstClass => {
-                let (target_idx, amount) = if let Some(record) = &self.last_purchase {
-                    if record.is_first_class && record.buyer_idx != player_idx {
-                        (record.buyer_idx, record.price)
-                    } else {
-                        return Err("Nu poți folosi acest card acum. Nicio ștampilă First Class nu a fost cumpărată recent de alți jucători.".to_string());
+                // Căutăm First Class stamp la toți jucătorii (nu doar la cel original)
+                let mut target_idx: Option<usize> = None;
+                let mut amount = 0;
+                
+                for (idx, p) in self.players.iter().enumerate() {
+                    for stamp in p.passport.left_column.iter().chain(p.passport.right_column.iter()) {
+                        if stamp.destination_id.is_none() { // First Class stamp
+                            if idx != player_idx { // Nu poți fura de la tine
+                                target_idx = Some(idx);
+                                // Folosim prețul din last_purchase dacă există
+                                if let Some(record) = &self.last_purchase {
+                                    amount = record.price;
+                                }
+                                break;
+                            }
+                        }
                     }
-                } else {
-                    return Err("Nu poți folosi acest card acum.".to_string());
+                    if target_idx.is_some() {
+                        break;
+                    }
+                }
+                
+                let target_idx = match target_idx {
+                    Some(idx) => idx,
+                    None => return Err("Nu există nicio ștampilă First Class de furat de la alți jucători.".to_string()),
                 };
 
                 // Perform the steal
                 if let Some(stamp) = self.players[target_idx].passport.remove_last_stamp() {
                     println!("✈️ STEAL FIRST CLASS REACTIV! Ai furat ștampila de la {}.", self.players[target_idx].name);
                     
-                    // Refund the original buyer
+                    // Refund the owner
                     self.players[target_idx].add_money(amount);
                     println!("💰 Jucătorul {} a fost despăgubit cu M{}.", self.players[target_idx].name, amount);
 
