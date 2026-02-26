@@ -159,9 +159,20 @@ impl Game {
     pub fn check_can_player_say_no(&self, player_idx: usize) -> bool {
         self.history.iter().rev().take(3).any(|action| {
              match action {
-                GameAction::Payment { from, to, initiator, .. } => *from == Some(player_idx) && to.is_some() && *initiator != Some(player_idx),
-                GameAction::StampTransfer { from, initiator, .. } => 
-                    *from == Some(player_idx) && *initiator != Some(player_idx),
+                GameAction::Payment { from, to, initiator, .. } => {
+                    // Original action against player: from me to someone else
+                    let is_against_me = *from == Some(player_idx) && to.is_some() && *initiator != Some(player_idx);
+                    // Revert action (Just Say No) against player: from someone else to me
+                    let is_revert_against_me = *from != Some(player_idx) && *to == Some(player_idx) && *initiator != Some(player_idx);
+                    is_against_me || is_revert_against_me
+                },
+                GameAction::StampTransfer { from, to, initiator, .. } => {
+                    // Original action against player: from me to someone else
+                    let is_against_me = *from == Some(player_idx) && *initiator != Some(player_idx);
+                    // Revert action (Just Say No) against player: from someone else to me
+                    let is_revert_against_me = *from != Some(player_idx) && *to == Some(player_idx) && *initiator != Some(player_idx);
+                    is_against_me || is_revert_against_me
+                },
                 _ => false
             }
         })
@@ -1458,6 +1469,13 @@ impl Game {
                             GameAction::StampTransfer { from, initiator, .. } if *from == Some(player_idx) && *initiator != Some(player_idx) => {
                                 Some((i, action.clone()))
                             },
+                            // Allow reverting a "Just Say No" action (which is a Payment or StampTransfer initiated by the original target)
+                            GameAction::Payment { from, to, amount, initiator } if *from != Some(player_idx) && *to == Some(player_idx) && *initiator != Some(player_idx) => {
+                                Some((i, action.clone()))
+                            },
+                            GameAction::StampTransfer { from, to, stamp_name, initiator, .. } if *from != Some(player_idx) && *to == Some(player_idx) && *initiator != Some(player_idx) => {
+                                Some((i, action.clone()))
+                            },
                             _ => None
                         }
                     });
@@ -1465,57 +1483,61 @@ impl Game {
                 if let Some((idx_in_history, action)) = found_revert {
                     self.players[player_idx].say_no_cards += 1;
                     match action {
-                        GameAction::Payment { to, amount, .. } => {
-                            let receiver_idx = to.unwrap();
-                            if self.players[receiver_idx].pay_money(amount) {
-                                self.players[player_idx].add_money(amount);
+                        GameAction::Payment { from, to, amount, initiator } => {
+                            // Determine the direction of the revert
+                            let (source_idx, target_idx) = if from == Some(player_idx) {
+                                // Original payment: from me to someone else (revert back to me)
+                                (to.unwrap(), from.unwrap())
+                            } else {
+                                // Reverted payment (from someone else to me) - revert back to original state
+                                (from.unwrap(), to.unwrap())
+                            };
+
+                            if self.players[source_idx].pay_money(amount) {
+                                self.players[target_idx].add_money(amount);
                                 println!("🛑 SAY NO! Plata de M{} a fost anulată. Banii s-au întors.", amount);
                                 self.log_action(Some(player_idx), format!("Just Say No! Payment of M{} cancelled", amount));
+                                // Record the revert action in history so it can also be reverted
+                                self.history.push(GameAction::Payment {
+                                    from: Some(source_idx),
+                                    to: Some(target_idx),
+                                    amount,
+                                    initiator: Some(player_idx)
+                                });
                             }
                         },
-                        GameAction::StampTransfer { to, stamp_name, .. } => {
-                            if let Some(target_idx) = to {
-                                // ✅ Verificăm dacă a fost un schimb (Swap)
-                                let mut swap_info = None;
-                                if idx_in_history > 0 {
-                                    if let Some(prev_action) = self.history.get(idx_in_history - 1).cloned() {
-                                        if let GameAction::StampTransfer { from: Some(f_idx), to: Some(t_idx), stamp_name: other_stamp_name, .. } = prev_action {
-                                            if f_idx == target_idx && t_idx == player_idx {
-                                                swap_info = Some((other_stamp_name, target_idx));
-                                            }
-                                        }
-                                    }
-                                }
-
-                                if let Some((other_stamp_name, t_idx)) = swap_info {
-                                    // 🔄 REVERSAL ATOMIC PENTRU SCHIMB (SWAP)
-                                    // Găsim pozițiile ambelor ștampile
-                                    let pos_target = self.players[t_idx].passport.find_stamp_index(&stamp_name);
-                                    let pos_me = self.players[player_idx].passport.find_stamp_index(&other_stamp_name);
-
-                                    if let (Some(pa), Some(pb)) = (pos_target, pos_me) {
-                                        // Scoatem ambele ștampile înainte de a le adăuga la loc
-                                        let s_to_me = self.players[t_idx].passport.remove_stamp_at(pa);
-                                        let s_to_target = self.players[player_idx].passport.remove_stamp_at(pb);
-
-                                        if let (Some(sa), Some(sb)) = (s_to_me, s_to_target) {
-                                            self.add_stamp_with_checks(player_idx, sa);
-                                            self.add_stamp_with_checks(t_idx, sb);
-                                            println!("🛑 Schimb anulat ATOMIC! {} și {} și-au recuperat ștampilele în coloanele corecte.", self.players[player_idx].name, self.players[t_idx].name);
-                                            self.log_action(Some(player_idx), format!("Just Say No! Swap {} <-> {} reversed atomically", stamp_name, other_stamp_name));
-                                        }
-                                    }
-                                } else {
-                                    // 🔄 REVERSAL PENTRU TRANSFER SIMPLU
-                                    if let Some(pos) = self.players[target_idx].passport.find_stamp_index(&stamp_name) {
-                                        if let Some(s) = self.players[target_idx].passport.remove_stamp_at(pos) {
-                                            self.add_stamp_with_checks(player_idx, s);
-                                            println!("🛑 SAY NO! Transferul ștampilei {} a fost anulat.", stamp_name);
-                                            self.log_action(Some(player_idx), format!("Just Say No! Stamp {} recovered", stamp_name));
-                                        }
-                                    }
-                                }
+                        GameAction::StampTransfer { from, to, stamp_name, stamp_id, is_first_class, initiator } => {
+                            // Determine the direction of the revert
+                            let (source_idx, target_idx) = if from == Some(player_idx) {
+                                // Original transfer: from me to someone else (revert back to me)
+                                (to.unwrap(), from.unwrap())
                             } else {
+                                // Reverted transfer (from someone else to me) - revert back to original state
+                                (from.unwrap(), to.unwrap())
+                            };
+
+                            // First, try to handle as single transfer (in case the swap detection fails or is not applicable)
+                            let mut handled = false;
+                            
+                            if let Some(pos) = self.players[source_idx].passport.find_stamp_index(&stamp_name) {
+                                if let Some(s) = self.players[source_idx].passport.remove_stamp_at(pos) {
+                                    // Clone before passing to add_stamp_with_checks to keep ownership for history
+                                    let s_clone = s.clone();
+                                    self.add_stamp_with_checks(target_idx, s);
+                                    println!("🛑 SAY NO! Transferul ștampilei {} a fost anulat.", stamp_name);
+                                    self.log_action(Some(player_idx), format!("Just Say No! Stamp {} recovered", stamp_name));
+                                    // Record the revert action in history
+                                    self.history.push(GameAction::StampTransfer {
+                                        from: Some(source_idx),
+                                        to: Some(target_idx),
+                                        stamp_name: s_clone.name.clone(),
+                                        stamp_id: format!("{}", s_clone.destination_id.unwrap_or(0)),
+                                        is_first_class: s_clone.destination_id.is_none(),
+                                        initiator: Some(player_idx)
+                                    });
+                                    handled = true;
+                                }
+                            } else if to.is_none() {
                                 // A fost o eliminare (TakeAllLastStamps) -> o punem la loc
                                 // Trebuie să găsim obiectul Stamp original. 
                                 let stamp_obj = if stamp_name == "First Class" {
@@ -1525,9 +1547,76 @@ impl Game {
                                         .map(|d| Stamp::from_destination(d))
                                         .unwrap_or(Stamp::first_class()) // Fallback
                                 };
+                                // Clone before passing to add_stamp_with_checks to keep ownership for history
+                                let stamp_obj_clone = stamp_obj.clone();
                                 self.add_stamp_with_checks(player_idx, stamp_obj);
                                 println!("🛑 SAY NO! Ștampila {} a fost recuperată!", stamp_name);
                                 self.log_action(Some(player_idx), format!("Just Say No! Stamp {} recovered", stamp_name));
+                                // Record the revert action in history
+                                self.history.push(GameAction::StampTransfer {
+                                    from: None,
+                                    to: Some(player_idx),
+                                    stamp_name: stamp_obj_clone.name.clone(),
+                                    stamp_id: format!("{}", stamp_obj_clone.destination_id.unwrap_or(0)),
+                                    is_first_class: stamp_obj_clone.destination_id.is_none(),
+                                    initiator: Some(player_idx)
+                                });
+                                handled = true;
+                            }
+                            
+                            if !handled {
+                                // If single transfer failed, try to handle as swap
+                                // ✅ Verificăm dacă a fost un schimb (Swap)
+                                let mut swap_info = None;
+                                if idx_in_history > 0 {
+                                    if let Some(prev_action) = self.history.get(idx_in_history - 1).cloned() {
+                                        if let GameAction::StampTransfer { from: Some(f_idx), to: Some(t_idx), stamp_name: other_stamp_name, .. } = prev_action {
+                                            if f_idx == source_idx && t_idx == target_idx {
+                                                swap_info = Some((other_stamp_name, source_idx));
+                                            }
+                                        }
+                                    }
+                                }
+
+                                if let Some((other_stamp_name, s_idx)) = swap_info {
+                                    // 🔄 REVERSAL ATOMIC PENTRU SCHIMB (SWAP)
+                                    // Găsim pozițiile ambelor ștampile
+                                    let pos_target = self.players[s_idx].passport.find_stamp_index(&stamp_name);
+                                    let pos_me = self.players[target_idx].passport.find_stamp_index(&other_stamp_name);
+
+                                    if let (Some(pa), Some(pb)) = (pos_target, pos_me) {
+                                        // Scoatem ambele ștampile înainte de a le adăuga la loc
+                                        let s_to_me = self.players[s_idx].passport.remove_stamp_at(pa);
+                                        let s_to_target = self.players[target_idx].passport.remove_stamp_at(pb);
+
+                                        if let (Some(sa), Some(sb)) = (s_to_me, s_to_target) {
+                                            // Clone before passing to add_stamp_with_checks to keep ownership for history
+                                            let sa_clone = sa.clone();
+                                            let sb_clone = sb.clone();
+                                            self.add_stamp_with_checks(target_idx, sa);
+                                            self.add_stamp_with_checks(s_idx, sb);
+                                            println!("🛑 Schimb anulat ATOMIC! {} și {} și-au recuperat ștampilele în coloanele corecte.", self.players[player_idx].name, self.players[s_idx].name);
+                                            self.log_action(Some(player_idx), format!("Just Say No! Swap {} <-> {} reversed atomically", stamp_name, other_stamp_name));
+                                            // Record the revert action in history
+                                            self.history.push(GameAction::StampTransfer {
+                                                from: Some(s_idx),
+                                                to: Some(target_idx),
+                                                stamp_name: sa_clone.name.clone(),
+                                                stamp_id: format!("{}", sa_clone.destination_id.unwrap_or(0)),
+                                                is_first_class: sa_clone.destination_id.is_none(),
+                                                initiator: Some(player_idx)
+                                            });
+                                            self.history.push(GameAction::StampTransfer {
+                                                from: Some(target_idx),
+                                                to: Some(s_idx),
+                                                stamp_name: sb_clone.name.clone(),
+                                                stamp_id: format!("{}", sb_clone.destination_id.unwrap_or(0)),
+                                                is_first_class: sb_clone.destination_id.is_none(),
+                                                initiator: Some(player_idx)
+                                            });
+                                        }
+                                    }
+                                }
                             }
                         },
                         _ => {}
