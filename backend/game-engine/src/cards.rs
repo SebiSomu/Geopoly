@@ -128,16 +128,6 @@ impl ChanceDeck {
         let mut rng = thread_rng();
         cards.shuffle(&mut rng);
 
-        let test_card = cards.iter().find(|c| c.id == "chance_reroll").unwrap().clone();
-        for _ in 0..6 {
-            cards.push(test_card.clone());
-        }
-
-        if let Some(pos) = cards.iter().position(|c| c.id == "chance_reroll") {
-            let card = cards.remove(pos);
-            cards.push(card);
-        }
-
         ChanceDeck {
             cards,
             discard_pile: Vec::new(),

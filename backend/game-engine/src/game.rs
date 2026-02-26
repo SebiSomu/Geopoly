@@ -188,7 +188,20 @@ impl Game {
 
     pub fn check_can_player_use_intercept(&self, player_idx: usize) -> bool {
         if let Some(record) = &self.last_purchase {
-            record.buyer_idx != player_idx
+            // Nu poți intercepta propria cumpărare originală
+            if record.buyer_idx == player_idx {
+                return false;
+            }
+            
+            // Căutăm stampila la toți jucătorii
+            for (idx, p) in self.players.iter().enumerate() {
+                if p.passport.find_stamp_index(&record.name).is_some() {
+                    // Stampila există - poți intercepta doar dacă NU o ai tu deja
+                    return idx != player_idx;
+                }
+            }
+            // Stampila nu există în joc (poate vândută la bancă)
+            false
         } else {
             false
         }
@@ -206,7 +219,24 @@ impl Game {
 
     pub fn check_can_player_use_steal_first_class(&self, player_idx: usize) -> bool {
         if let Some(record) = &self.last_purchase {
-            record.is_first_class && record.buyer_idx != player_idx
+            if !record.is_first_class {
+                return false;
+            }
+            // Nu poți fura propria cumpărare originală
+            if record.buyer_idx == player_idx {
+                return false;
+            }
+            
+            // Căutăm first class stamp (cu destination_id = None) la toți jucătorii
+            for (idx, p) in self.players.iter().enumerate() {
+                for stamp in p.passport.left_column.iter().chain(p.passport.right_column.iter()) {
+                    if stamp.destination_id.is_none() {
+                        // Există first class - poți fura doar dacă NU ai tu deja
+                        return idx != player_idx;
+                    }
+                }
+            }
+            false
         } else {
             false
         }
@@ -1356,21 +1386,37 @@ impl Game {
                     }
                     
                     let price = record.price;
-                    let old_buyer_idx = record.buyer_idx;
                     let stamp_name = record.name.clone();
+                    
+                    // Căutăm stampila la TOȚI jucătorii (nu doar la cel original) pentru a suporta trade-uri
+                    let mut current_owner_idx: Option<usize> = None;
+                    for (idx, p) in self.players.iter().enumerate() {
+                        if p.passport.find_stamp_index(&stamp_name).is_some() {
+                            current_owner_idx = Some(idx);
+                            break;
+                        }
+                    }
+                    
+                    let old_buyer_idx = if let Some(owner_idx) = current_owner_idx {
+                        owner_idx
+                    } else {
+                        // Stampila nu a fost găsită la nimeni - poate a fost vândută la bancă
+                        return Err("Proprietatea nu mai există în joc!".to_string());
+                    };
+                    
                     // Verificăm dacă eu am bani să-l cumpăr
                     if self.players[player_idx].pay_money(price) {
-                        // Refundăm vechiul cumpărător
+                        // Refundăm actualul proprietar
                         self.players[old_buyer_idx].add_money(price);
                         
-                        // Mutăm ștampila de la el la mine
+                        // Mutăm ștampila de la actualul proprietar la mine
                         if let Some(pos) = self.players[old_buyer_idx].passport.find_stamp_index(&stamp_name) {
                             if let Some(stamp) = self.players[old_buyer_idx].passport.remove_stamp_at(pos) {
                                  let s_id = format!("{}", stamp.destination_id.unwrap_or(0));
                                  let is_fc = stamp.destination_id.is_none();
 
                                  self.add_stamp_with_checks(player_idx, stamp);
-                                 println!("🎯 INTERCEPT! {} a preluat '{}' de la {} pentru M{}!", 
+                                 println!("🎯 INTERCEPT! {} a preluat '{}' de la {} pentru M{}! - Căutat la toți jucătorii", 
                                           self.players[player_idx].name, stamp_name, self.players[old_buyer_idx].name, price);
                                 
                                  self.history.push(GameAction::Payment { from: Some(player_idx), to: None, amount: price, initiator: None });
@@ -1393,7 +1439,7 @@ impl Game {
                         }
                         self.players[player_idx].add_money(price);
                         self.players[old_buyer_idx].pay_money(price);
-                        return Err("Proprietatea nu mai este în pașaportul cumpărătorului original.".to_string());
+                        return Err("Proprietatea nu a putut fi transferată.".to_string());
                     } else {
                         return Err("Nu ai suficienți bani pentru interceptare!".to_string());
                     }
