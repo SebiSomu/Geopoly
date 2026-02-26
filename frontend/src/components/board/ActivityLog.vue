@@ -154,7 +154,7 @@ const displayEntries = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 4px;
-  max-height: 140px; /* Perfect height to fit ~3 detailed entries as seen in screenshot */
+  max-height: 190px; /* Taller to show more entries */
   overflow-y: auto;
   scrollbar-width: thin;
   scrollbar-color: rgba(148, 163, 184, 0.2) transparent;

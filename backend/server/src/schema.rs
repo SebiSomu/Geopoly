@@ -187,7 +187,7 @@ impl Lobby {
                 pending_auction,
                 is_jail_decision: game.step == GameStep::WaitingForJailDecision,
                 is_reroll_dice: matches!(game.step, GameStep::WaitingForRerollDice { .. }),
-                activity_log: game.activity_log.iter().rev().take(5).map(|e| ActivityLogEntryDisplay {
+                activity_log: game.activity_log.iter().rev().map(|e| ActivityLogEntryDisplay {
                     player_idx: e.player_idx.map(|i| i as u8),
                     message: e.message.clone(),
                 }).collect(),

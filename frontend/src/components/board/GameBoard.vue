@@ -2556,14 +2556,14 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
   justify-content: center;
   align-items: center;
   pointer-events: auto;
-  transform: translateY(-85px); /* Main dice shift */
+  transform: translateY(-100px); /* Main dice shift - moved up 5px */
   position: relative; /* Anchor for absolute log */
 }
 
 .activity-log-pos {
   position: absolute;
   top: 100%;
-  margin-top: 40px; /* Gap to move it even lower as requested */
+  margin-top: 15px; /* Activity log up 5px */
 }
 
 .dice-control-panel {
