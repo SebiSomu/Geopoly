@@ -97,7 +97,7 @@ const getCardStatus = (card: any) => {
   if (desc.includes('collect a tourist tax instead of paying')) {
     const me = props.players.find(p => p.username === props.username);
     if (me && !me.canUseCollectTax) {
-      return { playable: false, hint: 'No recent payment to player' };
+      return { playable: false, hint: 'No recent tourist tax paid' };
     }
   }
 

@@ -153,7 +153,7 @@ const startGame = () => {
                 </div>
 
                 <div class="players-list">
-                    <h3>PLAYERS ({{ players.length }}/4)</h3>
+                    <h3>PLAYERS: {{ players.length }}</h3>
                     <ul>
                         <li v-for="player in players" :key="player.username" :class="{ 'self': player.username === username }">
                             <span class="p-name">

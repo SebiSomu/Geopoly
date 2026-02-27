@@ -2239,7 +2239,8 @@ impl Game {
                                 initiator: None,
                             });
 
-                            self.log_action(None, format!("♻️ Sneaky Swap: {} and {} swapped stamps!", self.players[p1_idx].name, self.players[p2_idx].name));
+                            self.log_action(None, format!("♻️ Sneaky Swap: {} and {} swapped stamps ('{}' ↔ '{}')!", 
+                                self.players[p1_idx].name, self.players[p2_idx].name, s1.name, s2.name));
 
                             self.add_stamp_with_checks(p1_idx, s2);
                             self.add_stamp_with_checks(p2_idx, s1);
