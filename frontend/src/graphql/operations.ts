@@ -123,6 +123,11 @@ export const GET_LOBBY_QUERY = gql`
         }
         isJailDecision
         isRerollDice
+        pendingStampSelection {
+          action
+          cardId
+          selectorIdx
+        }
       }
       players {
         username
@@ -140,6 +145,7 @@ export const GET_LOBBY_QUERY = gql`
           x
           y
           size
+          price
         }
         hereAndNowCards {
           id
@@ -272,6 +278,14 @@ export const RESOLVE_JAIL_DECISION_MUTATION = gql`
       wentToJail
       turnEnds
       currentTurnIndex
+    }
+  }
+`
+
+export const RESOLVE_STAMP_AMNESTY_MUTATION = gql`
+  mutation ResolveStampAmnesty($code: String!, $username: String!, $stampName: String!) {
+    resolveStampAmnesty(code: $code, username: $username, stampName: $stampName) {
+      code
     }
   }
 `

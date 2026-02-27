@@ -38,6 +38,7 @@ const getCardStatus = (card: any) => {
   
   // Movement cards
   if (desc.includes('advance 5 spaces') || desc.includes('go to any space')) {
+    if (props.inJail) return { playable: false, hint: 'In jail' };
     if (!props.isMyTurn) return { playable: false, hint: 'Not your turn' };
   }
 
@@ -106,6 +107,11 @@ const getCardStatus = (card: any) => {
     if (me && !me.canUseStealFirstClass) {
       return { playable: false, hint: 'No recent First Class by others' };
     }
+  }
+
+  // Stamp Amnesty — requires at least one stamp in your own passport
+  if (desc.includes('stamp amnesty') || desc.includes('sell a stamp')) {
+    if (props.propertyCount === 0) return { playable: false, hint: 'No stamps to sell' };
   }
 
   return { playable: true, hint: 'Tap to play' };

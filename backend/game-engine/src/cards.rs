@@ -12,7 +12,7 @@ pub enum ChanceCardAction {
     PayHospital,                         // Plătește M200 pentru spitalizare
     FirstClassBonus,                     // Colectează M40 pentru fiecare ștampilă First Class (x2)
     CollectFromEachPlayer(u32),          // Toți jucătorii îți plătesc M40
-    RerollOneDie,                        // Aruncă din nou unul din zaruri și mută
+    RerollOneDice,                        // Aruncă din nou unul din zaruri și mută
     GoToJail,                            // Mergi la închisoare
     AdvanceToStart,                      // Avansează la START
     DiceChallenge,                       // Alege un jucător; dați amândoi cu zarul (x2)
@@ -72,7 +72,7 @@ impl ChanceDeck {
             ChanceCard {
                 id: "chance_reroll".to_string(),
                 description: "Reroll one of the dice and move.".to_string(),
-                action: ChanceCardAction::RerollOneDie,
+                action: ChanceCardAction::RerollOneDice,
                 can_keep: false,
             },
             ChanceCard {
@@ -101,6 +101,12 @@ impl ChanceDeck {
             },
             ChanceCard {
                 id: "chance_collect_100".to_string(),
+                description: "Collect M100 from the bank.".to_string(),
+                action: ChanceCardAction::CollectMoney(100),
+                can_keep: false,
+            },
+            ChanceCard {
+                id: "chance_collect_100_2".to_string(),
                 description: "Collect M100 from the bank.".to_string(),
                 action: ChanceCardAction::CollectMoney(100),
                 can_keep: false,
@@ -173,6 +179,7 @@ pub enum HereAndNowCardAction {
     StealFirstClass,                     // Fură ștampila First Class a altui jucător când o primește
     MoveAnywhere,                        // Mergi în orice loc de pe tablă
     CollectTax,                          // Colectează o taxă de turist în loc să plătești
+    StampAmnesty,                        // Vinde orice ștampilă din pașaportul tău băncii pentru 150% din prețul original
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -260,6 +267,11 @@ impl HereAndNowDeck {
                 id: "hn_collect_tax".to_string(),
                 description: "Collect a tourist tax instead of paying for it.".to_string(),
                 action: HereAndNowCardAction::CollectTax,
+            },
+            HereAndNowCard {
+                id: "hn_stamp_amnesty".to_string(),
+                description: "Stamp Amnesty! Sell any stamp from your passport back to the bank for 150% of its original price.".to_string(),
+                action: HereAndNowCardAction::StampAmnesty,
             },
         ];
 

@@ -21,6 +21,7 @@ pub struct PropertyInfo {
     pub x: f32,   // horizontal position in pixels (within column)
     pub y: f32,   // vertical position in pixels (from bottom of column)
     pub size: u32, // diameter in pixels
+    pub price: i32,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]

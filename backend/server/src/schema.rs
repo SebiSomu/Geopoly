@@ -70,6 +70,7 @@ pub struct GameStateDisplay {
     pub pending_auction: Option<AuctionData>,
     pub is_jail_decision: bool,
     pub is_reroll_dice: bool,
+    pub pending_stamp_selection: Option<TargetSelectionData>,
     pub activity_log: Vec<ActivityLogEntryDisplay>,
 }
 
@@ -187,6 +188,16 @@ impl Lobby {
                 pending_auction,
                 is_jail_decision: game.step == GameStep::WaitingForJailDecision,
                 is_reroll_dice: matches!(game.step, GameStep::WaitingForRerollDice { .. }),
+                pending_stamp_selection: match &game.step {
+                    GameStep::WaitingForStampSelection { action, player_idx, .. } => {
+                        Some(TargetSelectionData {
+                            action: action.clone(),
+                            card_id: None,
+                            selector_idx: *player_idx,
+                        })
+                    },
+                    _ => None,
+                },
                 activity_log: game.activity_log.iter().rev().map(|e| ActivityLogEntryDisplay {
                     player_idx: e.player_idx.map(|i| i as u8),
                     message: e.message.clone(),
@@ -313,6 +324,12 @@ fn map_stamp_to_info(s: &game_engine::passport::Stamp, game: &game_engine::game:
         "grey".to_string()
     };
 
+    let price = if let Some(id) = s.destination_id {
+        game.board.find_destination_by_id(id).map(|d| d.price).unwrap_or(0)
+    } else {
+        100 // First Class original price
+    };
+
     crate::model::PropertyInfo {
         name: s.name.clone(),
         color,
@@ -322,6 +339,7 @@ fn map_stamp_to_info(s: &game_engine::passport::Stamp, game: &game_engine::game:
         x,
         y,
         size,
+        price: price as i32,
     }
 }
 
@@ -1095,6 +1113,50 @@ impl MutationRoot {
 
             // Execute auction resolution
             game.resolve_auction()
+                .map_err(|e| Error::new(e))?;
+
+            // Sync State
+            sync_lobby_state(&mut lobby.players, game);
+
+            // Save
+            db.lobbies().update_one(
+                doc! { "_id": lobby.id },
+                doc! { 
+                    "$set": { 
+                        "players": mongodb::bson::to_bson(&lobby.players).unwrap(),
+                        "game": mongodb::bson::to_bson(&lobby.game).unwrap()
+                    } 
+                },
+                None
+            ).await?;
+
+            Ok(lobby)
+        } else {
+            Err(Error::new("Lobby not found"))
+        }
+    }
+
+    /// Resolve Stamp Amnesty selection
+    async fn resolve_stamp_amnesty(&self, ctx: &Context<'_>, code: String, username: String, stamp_name: String) -> Result<Lobby> {
+        let db = ctx.data::<DB>()?;
+        let lobby_opt = db.lobbies().find_one(doc! { "code": &code }, None).await?;
+
+        if let Some(mut lobby) = lobby_opt {
+            let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
+
+            // Validate: must be the player whose stamp selection is pending
+            let selector_idx = if let GameStep::WaitingForStampSelection { player_idx, .. } = &game.step {
+                *player_idx
+            } else {
+                return Err(Error::new("Nu ești în etapa de a alege o ștampilă!"));
+            };
+
+            if game.players[selector_idx].name != username {
+                return Err(Error::new("Nu este rândul tău să alegi ștampila!"));
+            }
+
+            // Execute resolution
+            game.resolve_stamp_amnesty(stamp_name)
                 .map_err(|e| Error::new(e))?;
 
             // Sync State

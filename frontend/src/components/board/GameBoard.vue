@@ -7,7 +7,7 @@ import {
   RESOLVE_AIRPORT_DECISION_MUTATION, RESOLVE_AIRPORT_DESTINATION_MUTATION, 
   RESOLVE_TARGET_SELECTION_MUTATION, ROLL_DUEL_DICE_MUTATION, FINISH_DUEL_MUTATION,
   PLACE_BID_MUTATION, RESOLVE_AUCTION_MUTATION,
-  RESOLVE_JAIL_DECISION_MUTATION
+  RESOLVE_JAIL_DECISION_MUTATION, RESOLVE_STAMP_AMNESTY_MUTATION
 } from '../../graphql/operations'
 import Passport from './Passport.vue'
 import Stamp from './Stamp.vue'
@@ -17,6 +17,7 @@ import CardStack from './CardStack.vue'
 import GameToken from './GameToken.vue'
 import CardHand from '../CardHand.vue'
 import PlayerSelectionModal from './PlayerSelectionModal.vue'
+import StampSelectionModal from './StampSelectionModal.vue'
 import WinnerAnnouncement from './WinnerAnnouncement.vue'
 
 const props = defineProps<{
@@ -44,6 +45,7 @@ const { mutate: finishDuelMutation } = useMutation(FINISH_DUEL_MUTATION);
 const { mutate: placeBidMutation } = useMutation(PLACE_BID_MUTATION);
 const { mutate: resolveAuctionMutation } = useMutation(RESOLVE_AUCTION_MUTATION);
 const { mutate: resolveJailDecisionMutation } = useMutation(RESOLVE_JAIL_DECISION_MUTATION);
+const { mutate: resolveStampAmnestyMutation } = useMutation(RESOLVE_STAMP_AMNESTY_MUTATION);
 
 interface Property {
   name: string;
@@ -54,6 +56,7 @@ interface Property {
   x: number;
   y: number;
   size: number;
+  price: number;
 }
 
 interface Player {
@@ -104,6 +107,7 @@ interface GameState {
   activityLog: Array<{ playerIdx: number | null; message: string }>;
   isJailDecision: boolean;
   isRerollDice: boolean;
+  pendingStampSelection: { action: string; cardId: string | null; selectorIdx: number } | null;
 }
 
 // Game simulation state (local representation of server state)
@@ -131,6 +135,7 @@ const gameState = reactive<GameState>({
   activityLog: [],
   isJailDecision: false,
   isRerollDice: false,
+  pendingStampSelection: null,
 })
 
 let auctionInterval: any = null;
@@ -208,6 +213,7 @@ watchEffect(() => {
         gameState.awaitingAction = lobby.gameState.awaitingAction
         gameState.isJailDecision = lobby.gameState.isJailDecision || false
         gameState.isRerollDice = lobby.gameState.isRerollDice || false
+        gameState.pendingStampSelection = lobby.gameState.pendingStampSelection || null
       }
       gameState.forcedDealActive = lobby.gameState.isForcedDeal
     }
@@ -231,7 +237,8 @@ watchEffect(() => {
           destination_id: prop.destinationId,
           x: prop.x ?? 0,
           y: prop.y ?? 0,
-          size: prop.size ?? 0
+          size: prop.size ?? 0,
+          price: prop.price ?? 0
         })),
         hereAndNowCards: p.hereAndNowCards || [],
         chanceCards: p.chanceCards || [],
@@ -315,6 +322,10 @@ const myPlayerData = computed(() => {
 
 const myPlayerIdx = computed(() => {
   return gameState.players.findIndex(p => p.name === username);
+})
+
+const isMyStampSelection = computed(() => {
+  return gameState.pendingStampSelection && gameState.pendingStampSelection.selectorIdx === myPlayerIdx.value;
 })
 
 
@@ -739,6 +750,19 @@ const handleSelectDestination = async (position: number) => {
     }
   } catch (e) {
     console.error("Airport destination failed:", e)
+  }
+}
+
+const handleResolveStampAmnesty = async (stampName: string) => {
+  try {
+    await resolveStampAmnestyMutation({
+      code: props.code,
+      username: username,
+      stampName
+    })
+    gameState.pendingStampSelection = null
+  } catch (e) {
+    console.error("Stamp Amnesty failed:", e)
   }
 }
 
@@ -1590,12 +1614,21 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 
   <!-- Selection Modal (Overlay) -->
   <PlayerSelectionModal
-    v-if="gameState.targetSelection && gameState.targetSelection?.selectorIdx === gameState.players.findIndex(p => p.name === username)"
+    v-if="gameState.pickingTarget || gameState.targetSelection"
     :players="gameState.players"
-    :selectorIdx="gameState.targetSelection?.selectorIdx!"
-    :action="gameState.targetSelection?.action!"
+    :selectorIdx="gameState.targetSelection?.selectorIdx ?? myPlayerIdx"
+    :action="gameState.targetSelection?.action ?? 'SneakySwap'"
     :username="username"
-    @select="handleSelectTarget"
+    @select="(name) => gameState.pickingTarget ? executeSwap(name) : handleSelectTarget(name)"
+  />
+
+  <!-- Stamp Selection Modal (Stamp Amnesty) -->
+  <StampSelectionModal
+    v-if="isMyStampSelection"
+    :stamps="myPlayerData?.properties || []"
+    title="Stamp Amnesty"
+    subtitle="Select a stamp to sell for 150% its value"
+    @select="handleResolveStampAmnesty"
   />
 </div>
 </template>
