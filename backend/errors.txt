@@ -1,0 +1,2 @@
+    Checking game-engine v0.1.0 (C:\proiecte-vue\monopoly-world-edition\backend\game-engine)
+    Finished `dev` profile [unoptimized + debuginfo] target(s) in 1.90s

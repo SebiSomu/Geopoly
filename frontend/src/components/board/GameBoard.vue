@@ -1159,6 +1159,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                     </button>
 
                     <button 
+                      v-if="myHasJailFreeCard"
                       class="modal-btn jail-opt card" 
                       @click="handleResolveJailDecision('UseCard')"
                       :disabled="!isMyJailDecision || !myHasJailFreeCard"

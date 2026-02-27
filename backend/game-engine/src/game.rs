@@ -56,7 +56,7 @@ pub enum JailAction {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum GameAction {
-    Payment { is_tax: false, from: Option<usize>, to: Option<usize>, amount: i32, initiator: Option<usize> },
+    Payment { is_tax: bool, from: Option<usize>, to: Option<usize>, amount: i32, initiator: Option<usize> },
     StampTransfer { from: Option<usize>, to: Option<usize>, stamp_name: String, stamp_id: String, is_first_class: bool, initiator: Option<usize> },
     GoToJail { player_idx: usize },
     Move { player_idx: usize, from: u8, to: u8 },
@@ -159,7 +159,7 @@ impl Game {
 
     pub fn check_can_player_say_no(&self, player_idx: usize) -> bool {
         // Say No e valid DOAR când acțiunea recentă m-a dezavantajat:
-        //   1. Am plătit bani cuiva (taxă, duel pierdut etc.)  → Payment { is_tax: false, from: me, to: Some(X) }
+        //   1. Am plătit bani cuiva (taxă, duel pierdut etc.)  → Payment { is_tax: false, is_tax: false, from: me, to: Some(X) }
         //   2. Mi s-a luat o stampilă (swap, steal, TakeAll)   → StampTransfer { from: me, initiator: != me }
         //   3. Revert-of-revert: Say No-ul adversarului a trimis banii/stampila înapoi la ei,
         //      adică din perspectiva mea e ca și cum am plătit/pierdut din nou.
@@ -184,7 +184,7 @@ impl Game {
     pub fn check_can_player_use_discount(&self, player_idx: usize) -> bool {
         // 1. Reactive: recently paid > 100 to board
         let recently_paid = self.history.iter().rev().take(10).any(|action| {
-            if let GameAction::Payment { from, to: None, amount, .. } = action {
+            if let GameAction::Payment { is_tax: false, from, to: None, amount, .. } = action {
                 *from == Some(player_idx) && *amount > 100
             } else {
                 false
@@ -227,7 +227,7 @@ impl Game {
         for action in self.history.iter().rev().take(5) {
             match action {
                 GameAction::Move { .. } => break, // am depășit tura curentă
-                GameAction::Payment { from, to: Some(_), .. } => {
+                GameAction::Payment { is_tax: true, from, to: Some(_), .. } => {
                     if *from == Some(player_idx) {
                         return true;
                     }
@@ -806,7 +806,7 @@ impl Game {
                     });
 
                     // Record Payment
-                    self.history.push(GameAction::Payment {
+                    self.history.push(GameAction::Payment { is_tax: false,
                         from: Some(player_idx),
                         to: None,
                         amount: price,
@@ -889,7 +889,7 @@ impl Game {
                 });
 
                 // Record Payment
-                self.history.push(GameAction::Payment {
+                self.history.push(GameAction::Payment { is_tax: false,
                     from: Some(player_idx),
                     to: None,
                     amount: 100,
@@ -953,7 +953,7 @@ impl Game {
         if buy_flight {
             if self.players[player_idx].pay_money(100) {
                 // Record Payment
-                self.history.push(GameAction::Payment {
+                self.history.push(GameAction::Payment { is_tax: false,
                     from: Some(player_idx),
                     to: None,
                     amount: 100,
@@ -1182,7 +1182,7 @@ impl Game {
             println!("🏆 {} câștigă duelul! Primește M100.", self.players[challenger_idx].name);
             self.players[target_idx].pay_money(100);
             self.players[challenger_idx].add_money(100);
-            self.history.push(GameAction::Payment {
+            self.history.push(GameAction::Payment { is_tax: false,
                 from: Some(target_idx),
                 to: Some(challenger_idx),
                 amount: 100,
@@ -1195,7 +1195,7 @@ impl Game {
             println!("🏆 {} câștigă duelul! Primește M100.", self.players[target_idx].name);
             self.players[challenger_idx].pay_money(100);
             self.players[target_idx].add_money(100);
-            self.history.push(GameAction::Payment {
+            self.history.push(GameAction::Payment { is_tax: false,
                 from: Some(challenger_idx),
                 to: Some(target_idx),
                 amount: 100,
@@ -1406,7 +1406,7 @@ impl Game {
                         self.players[idx].pay_money(actual_amount);
                         self.players[player_idx].add_money(actual_amount);
                         println!("💰 {} a plătit M{} (cotă parte)!", self.players[idx].name, actual_amount);
-                        self.history.push(GameAction::Payment {
+                        self.history.push(GameAction::Payment { is_tax: false,
                             from: Some(idx),
                             to: Some(player_idx),
                             amount: actual_amount,
@@ -1540,7 +1540,7 @@ impl Game {
                         // ----------------------------------------------------------
                         // PAYMENT revert — eu am plătit cuiva, banii se întorc
                         // ----------------------------------------------------------
-                        GameAction::Payment { from, to, amount, initiator: _ } => {
+                        GameAction::Payment { is_tax: _, from, to, amount, .. } => {
                             // from == Some(player_idx), to == Some(X): banii de la X înapoi la mine
                             if let (Some(me), Some(creditor)) = (from, to) {
                                 if me == player_idx {
@@ -1548,7 +1548,7 @@ impl Game {
                                         self.players[me].add_money(amount);
                                         println!("🛑 SAY NO! Plata de M{} a fost anulată. Banii s-au întors.", amount);
                                         self.log_action(Some(player_idx), format!("Just Say No! Payment of M{} cancelled", amount));
-                                        self.history.push(GameAction::Payment {
+                                        self.history.push(GameAction::Payment { is_tax: false,
                                             from: Some(creditor),
                                             to: Some(me),
                                             amount,
@@ -1691,10 +1691,10 @@ impl Game {
                                                     });
 
                                                     // Caz special StealStampAndPay: dacă imediat înainte de
-                                                    // StampTransfer există un Payment { is_tax: false, from: tgt, to: me }
+                                                    // StampTransfer există un Payment { is_tax: false, is_tax: false, from: tgt, to: me }
                                                     // cu același initiator, returnăm și banii.
                                                     if idx_in_history > 0 {
-                                                        if let Some(GameAction::Payment { is_tax: false, from: pf, to: pt, amount: pa, initiator: pi })
+                                                        if let Some(GameAction::Payment { from: pf, to: pt, amount: pa, initiator: pi, .. })
                                                             = self.history.get(idx_in_history - 1).cloned()
                                                         {
                                                             if pf == Some(tgt) && pt == Some(player_idx) && pi == initiator {
@@ -1702,7 +1702,7 @@ impl Game {
                                                                 if self.players[player_idx].pay_money(pa) {
                                                                     self.players[tgt].add_money(pa);
                                                                     println!("🛑 SAY NO! Banii de M{} returnați la {}.", pa, self.players[tgt].name);
-                                                                    self.history.push(GameAction::Payment {
+                                                                    self.history.push(GameAction::Payment { is_tax: false,
                                                                         from: Some(player_idx),
                                                                         to: Some(tgt),
                                                                         amount: pa,
@@ -1798,7 +1798,7 @@ impl Game {
                 }
 
                 let refund_data = self.history.iter().rev().take(10).find_map(|action| {
-                    if let GameAction::Payment { from, to: None, amount, .. } = action {
+                    if let GameAction::Payment { is_tax: _, from, to: None, amount, .. } = action {
                         if *from == Some(player_idx) && *amount > 100 {
                             return Some(*amount - 100);
                         }
@@ -1820,7 +1820,7 @@ impl Game {
                     for action in self.history.iter().rev().take(5) {
                         match action {
                             GameAction::Move { .. } => break,
-                            GameAction::Payment { from, to: Some(receiver_idx), amount, .. } => {
+                            GameAction::Payment { is_tax: true, from, to: Some(receiver_idx), amount, .. } => {
                                 if *from == Some(player_idx) {
                                     result = Some((*receiver_idx, *amount));
                                     break;
@@ -1845,7 +1845,7 @@ impl Game {
                         self.players[player_idx].add_money(total);
                         println!("🧾 COLLECT TAX! Plata de M{} anulată și ai colectat M{} de la {}! (total M{} primit)",
                                  amount, amount, self.players[receiver_idx].name, total);
-                        self.history.push(GameAction::Payment {
+                        self.history.push(GameAction::Payment { is_tax: false,
                             from: Some(receiver_idx),
                             to: Some(player_idx),
                             amount: total,
@@ -1856,7 +1856,7 @@ impl Game {
                         self.players[player_idx].add_money(amount);
                         println!("🧾 COLLECT TAX! Plata de M{} anulată, dar {} nu are bani să plătească și taxa!",
                                  amount, self.players[receiver_idx].name);
-                        self.history.push(GameAction::Payment {
+                        self.history.push(GameAction::Payment { is_tax: false,
                             from: Some(receiver_idx),
                             to: Some(player_idx),
                             amount,
@@ -2026,7 +2026,7 @@ impl Game {
 
             // Record partial move or just payment?
             // START money is a transaction from Bank
-            self.history.push(GameAction::Payment {
+            self.history.push(GameAction::Payment { is_tax: false,
                 from: None,
                 to: Some(player_idx),
                 amount: 200,
@@ -2085,7 +2085,7 @@ impl Game {
         match action {
             ChanceCardAction::CollectMoney(amount) => {
                 self.players[idx].add_money(amount as i32);
-                self.history.push(GameAction::Payment {
+                self.history.push(GameAction::Payment { is_tax: false,
                     from: None,
                     to: Some(idx),
                     amount: amount as i32,
@@ -2101,7 +2101,7 @@ impl Game {
                     self.handle_bankruptcy(idx, None);
                 } else {
                     println!("{}", format!("Plătești M{}", amount).yellow());
-                    self.history.push(GameAction::Payment {
+                    self.history.push(GameAction::Payment { is_tax: false,
                         from: Some(idx),
                         to: None,
                         amount,
@@ -2121,7 +2121,7 @@ impl Game {
                 let gain = 40 * count;
                 self.players[idx].add_money(gain as i32);
                 println!("{}", format!("Ai {} ștampile First Class => primești M{}", count, gain).bright_green());
-                self.history.push(GameAction::Payment {
+                self.history.push(GameAction::Payment { is_tax: false,
                     from: None,
                     to: Some(idx),
                     amount: gain as i32,
@@ -2135,7 +2135,7 @@ impl Game {
                     if i != idx {
                         if self.players[i].pay_money(amount as i32) {
                             self.players[idx].add_money(amount as i32);
-                            self.history.push(GameAction::Payment {
+                            self.history.push(GameAction::Payment { is_tax: false,
                                 from: Some(i),
                                 to: Some(idx),
                                 amount: amount as i32,
@@ -2164,7 +2164,7 @@ impl Game {
                     from: old_pos as u8,
                     to: 0
                 });
-                self.history.push(GameAction::Payment {
+                self.history.push(GameAction::Payment { is_tax: false,
                     from: None,
                     to: Some(idx),
                     amount: 200,
@@ -2347,7 +2347,7 @@ impl Game {
 
                     if self.players[owner_idx].pay_money(tax as i32) {
                         self.players[player_idx].add_money(tax as i32);
-                        self.history.push(GameAction::Payment {
+                        self.history.push(GameAction::Payment { is_tax: false,
                             from: Some(owner_idx),
                             to: Some(player_idx),
                             amount: tax as i32,
@@ -2374,6 +2374,7 @@ impl Game {
                 if self.players[player_idx].pay_money(tax as i32) {
                     self.players[owner_idx].add_money(tax as i32);
                     self.history.push(GameAction::Payment {
+                        is_tax: true,
                         from: Some(player_idx),
                         to: Some(owner_idx),
                         amount: tax as i32,
@@ -2663,7 +2664,7 @@ impl Game {
 
             if self.players[player_idx].pay_money(price as i32) {
                 self.players[target_idx].add_money(price as i32);
-                self.history.push(GameAction::Payment {
+                self.history.push(GameAction::Payment { is_tax: false,
                     from: Some(player_idx),
                     to: Some(target_idx),
                     amount: price as i32,
@@ -2775,7 +2776,7 @@ impl Game {
             is_first_class: stamp.destination_id.is_none(),
             initiator: Some(player_idx),
         });
-        self.history.push(GameAction::Payment {
+        self.history.push(GameAction::Payment { is_tax: false,
             from: None,
             to: Some(player_idx),
             amount: payout,
@@ -2811,7 +2812,7 @@ impl Game {
             if let Some(dest) = self.board.find_destination_by_id(dest_id) {
                 let dest = dest.clone();
                 if self.players[winner_idx].pay_money(current_bid) {
-                    self.history.push(GameAction::Payment {
+                    self.history.push(GameAction::Payment { is_tax: false,
                         from: Some(winner_idx),
                         to: None,
                         amount: current_bid,
