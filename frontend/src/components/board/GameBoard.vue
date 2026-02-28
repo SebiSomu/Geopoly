@@ -372,6 +372,12 @@ const isMyStampSelection = computed(() => {
   return gameState.pendingStampSelection && gameState.pendingStampSelection.selectorIdx === myPlayerIdx.value;
 })
 
+const isMyTargetSelection = computed(() => {
+  if (gameState.pickingTarget) return true;
+  if (gameState.targetSelection && gameState.targetSelection.selectorIdx === myPlayerIdx.value) return true;
+  return false;
+})
+
 
 // Exact stamp colors from Stamp.vue
 const COLORS = {
@@ -1671,7 +1677,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
 
   <!-- Selection Modal (Overlay) -->
   <PlayerSelectionModal
-    v-if="gameState.pickingTarget || gameState.targetSelection"
+    v-if="isMyTargetSelection"
     :players="gameState.players"
     :selectorIdx="gameState.targetSelection?.selectorIdx ?? myPlayerIdx"
     :action="gameState.targetSelection?.action ?? 'SneakySwap'"
