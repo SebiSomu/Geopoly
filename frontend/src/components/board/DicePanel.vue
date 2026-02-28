@@ -154,7 +154,7 @@ const buttonText = computed(() => {
       <!-- Title for Duel -->
       <div v-if="isDuel" class="duel-title-area">
         <h2 class="duel-heading">⚔️ DICE DUEL ⚔️</h2>
-        <div v-if="isTie" class="tie-badge">TIE! ROLL AGAIN</div>
+        <div v-if="isTie" class="tie-badge">TIE!</div>
       </div>
 
       <!-- Duel Participants Info -->

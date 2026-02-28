@@ -289,3 +289,19 @@ export const RESOLVE_STAMP_AMNESTY_MUTATION = gql`
     }
   }
 `
+
+export const SEND_MESSAGE_MUTATION = gql`
+  mutation SendMessage($code: String!, $sender: String!, $content: String!) {
+    sendMessage(code: $code, sender: $sender, content: $content)
+  }
+`;
+
+export const MESSAGE_RECEIVED_SUBSCRIPTION = gql`
+  subscription MessageReceived($code: String!) {
+    messageReceived(code: $code) {
+      sender
+      content
+      timestamp
+    }
+  }
+`;

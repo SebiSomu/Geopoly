@@ -121,8 +121,8 @@ impl Passport {
         self.right_column.push(stamp);
         self.right_height_used = Self::column_height(&self.right_column);
 
-        // 3️⃣ Dacă depășim coloana dreaptă → CÂȘTIG
-        if self.right_height_used > RIGHT_COLUMN_HEIGHT {
+        // 3️⃣ Dacă depășim coloana dreaptă (adăugăm un buffer mic pentru a evita erorile de tip float încât 7.00001 să nu declanșeze câștigul)
+        if self.right_height_used > RIGHT_COLUMN_HEIGHT + 0.005 {
             self.overflowed = true;
         }
 
@@ -138,7 +138,7 @@ impl Passport {
     pub fn remove_last_stamp(&mut self) -> Option<Stamp> {
         if let Some(stamp) = self.right_column.pop() {
             self.right_height_used = Self::column_height(&self.right_column);
-            if self.right_height_used <= RIGHT_COLUMN_HEIGHT {
+            if self.right_height_used <= RIGHT_COLUMN_HEIGHT + 0.005 {
                 self.overflowed = false;
             }
             return Some(stamp);
@@ -210,7 +210,7 @@ impl Passport {
             if right_idx < self.right_column.len() {
                 let stamp = self.right_column.remove(right_idx);
                 self.right_height_used = Self::column_height(&self.right_column);
-                if self.right_height_used <= RIGHT_COLUMN_HEIGHT {
+                if self.right_height_used <= RIGHT_COLUMN_HEIGHT + 0.005 {
                     self.overflowed = false;
                 }
                 Some(stamp)
@@ -298,6 +298,6 @@ mod tests {
         passport.add_stamp(big_stamp.clone());
 
         assert!(passport.is_full());
-        assert!(passport.right_height_used > RIGHT_COLUMN_HEIGHT);
+        assert!(passport.right_height_used > RIGHT_COLUMN_HEIGHT + 0.005);
     }
 }

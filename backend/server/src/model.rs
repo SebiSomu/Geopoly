@@ -105,3 +105,11 @@ pub struct Lobby {
     #[graphql(skip)] // We will expose this manually via ComplexObject or specific fields
     pub game: Option<game_engine::game::Game>,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]
+pub struct ChatMessage {
+    pub sender: String,
+    pub content: String,
+    pub timestamp: String,
+    pub lobby_code: String,
+}

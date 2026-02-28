@@ -207,6 +207,11 @@ impl Game {
                 return false;
             }
 
+            // Nu poți intercepta ștampile First Class (există un cartonaș dedicat pentru asta)
+            if record.is_first_class {
+                return false;
+            }
+
             // Căutăm stampila la toți jucătorii
             for (idx, p) in self.players.iter().enumerate() {
                 if p.passport.find_stamp_index(&record.name).is_some() {

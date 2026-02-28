@@ -1,6 +1,8 @@
-use async_graphql::{ComplexObject, Context, Object, Schema, EmptySubscription, Result, Error, SimpleObject};
+use async_graphql::{ComplexObject, Context, Object, Schema, Result, Error, SimpleObject};
 use crate::database::DB;
-use crate::model::{User, Lobby, Player};
+use crate::model::{User, Lobby, Player, ChatMessage};
+use tokio_stream::Stream;
+use tokio::sync::broadcast;
 use mongodb::bson::doc;
 use chrono::Utc;
 use rand::{distributions::Alphanumeric, Rng};
@@ -1179,6 +1181,43 @@ impl MutationRoot {
             Err(Error::new("Lobby not found"))
         }
     }
+
+    async fn send_message(&self, ctx: &Context<'_>, code: String, sender: String, content: String) -> Result<bool> {
+        let censor = censor::Censor::Standard;
+        
+        let safe_content = censor.censor(&content);
+
+        let msg = ChatMessage {
+            sender,
+            content: safe_content,
+            timestamp: Utc::now().to_rfc3339(),
+            lobby_code: code,
+        };
+
+        if let Ok(sender) = ctx.data::<broadcast::Sender<ChatMessage>>() {
+            let _ = sender.send(msg);
+        }
+
+        Ok(true)
+    }
+}
+
+pub struct SubscriptionRoot;
+
+#[async_graphql::Subscription]
+impl SubscriptionRoot {
+    async fn message_received(&self, ctx: &Context<'_>, code: String) -> impl Stream<Item = ChatMessage> {
+        let sender = ctx.data_unchecked::<broadcast::Sender<ChatMessage>>();
+        let mut rx = sender.subscribe();
+
+        async_stream::stream! {
+            while let Ok(msg) = rx.recv().await {
+                if msg.lobby_code == code {
+                    yield msg;
+                }
+            }
+        }
+    }
 }
 
 /// Result of a dice roll
@@ -1194,7 +1233,7 @@ pub struct RollResult {
     pub current_turn_index: u8,
 }
 
-pub type MonopolySchema = Schema<QueryRoot, MutationRoot, EmptySubscription>;
+pub type MonopolySchema = Schema<QueryRoot, MutationRoot, SubscriptionRoot>;
 
 fn generate_code() -> String {
     rand::thread_rng()

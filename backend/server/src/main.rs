@@ -1,5 +1,5 @@
-use async_graphql::{http::GraphiQLSource, EmptySubscription, Schema};
-use async_graphql_axum::{GraphQLRequest, GraphQLResponse};
+use async_graphql::{http::GraphiQLSource, Schema};
+use async_graphql_axum::{GraphQLRequest, GraphQLResponse, GraphQLSubscription};
 use axum::{
     extract::Extension,
     response::{self, IntoResponse},
@@ -33,8 +33,11 @@ async fn main() {
 
     let db = DB::init().await;
     
-    let schema = Schema::build(QueryRoot, MutationRoot, EmptySubscription)
+    let (message_sender, _message_receiver) = tokio::sync::broadcast::channel::<crate::model::ChatMessage>(100);
+    
+    let schema = Schema::build(QueryRoot, MutationRoot, schema::SubscriptionRoot)
         .data(db)
+        .data(message_sender)
         .finish();
 
     let cors = CorsLayer::new()
@@ -44,6 +47,7 @@ async fn main() {
 
     let app = Router::new()
         .route("/graphql", get(graphiql).post(graphql_handler))
+        .route_service("/graphql/ws", GraphQLSubscription::new(schema.clone()))
         .layer(Extension(schema))
         .layer(cors);
 

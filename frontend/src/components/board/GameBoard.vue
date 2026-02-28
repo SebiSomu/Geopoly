@@ -7,8 +7,12 @@ import {
   RESOLVE_AIRPORT_DECISION_MUTATION, RESOLVE_AIRPORT_DESTINATION_MUTATION, 
   RESOLVE_TARGET_SELECTION_MUTATION, ROLL_DUEL_DICE_MUTATION, FINISH_DUEL_MUTATION,
   PLACE_BID_MUTATION, RESOLVE_AUCTION_MUTATION,
-  RESOLVE_JAIL_DECISION_MUTATION, RESOLVE_STAMP_AMNESTY_MUTATION
+  RESOLVE_JAIL_DECISION_MUTATION, RESOLVE_STAMP_AMNESTY_MUTATION,
+  SEND_MESSAGE_MUTATION, MESSAGE_RECEIVED_SUBSCRIPTION
 } from '../../graphql/operations'
+import { useSubscription } from '@vue/apollo-composable'
+import ChatIcon from './ChatIcon.vue'
+import ChatPanel from './ChatPanel.vue'
 import Passport from './Passport.vue'
 import Stamp from './Stamp.vue'
 import DicePanel from './DicePanel.vue'
@@ -46,6 +50,46 @@ const { mutate: placeBidMutation } = useMutation(PLACE_BID_MUTATION);
 const { mutate: resolveAuctionMutation } = useMutation(RESOLVE_AUCTION_MUTATION);
 const { mutate: resolveJailDecisionMutation } = useMutation(RESOLVE_JAIL_DECISION_MUTATION);
 const { mutate: resolveStampAmnestyMutation } = useMutation(RESOLVE_STAMP_AMNESTY_MUTATION);
+const { mutate: sendMessageMutation } = useMutation(SEND_MESSAGE_MUTATION);
+
+const chatState = reactive({
+  messages: [] as Array<{ sender: string; content: string; timestamp: string }>,
+  isOpen: false,
+  unreadCount: 0
+});
+
+const { onResult: onMessageReceived } = useSubscription(MESSAGE_RECEIVED_SUBSCRIPTION, () => ({
+  code: props.code
+}));
+
+onMessageReceived((result) => {
+  if (result.data?.messageReceived) {
+    const msg = result.data.messageReceived;
+    chatState.messages.push(msg);
+    if (!chatState.isOpen) {
+      chatState.unreadCount++;
+    }
+  }
+});
+
+const handleSendMessage = async (content: string) => {
+  try {
+    await sendMessageMutation({
+      code: props.code,
+      sender: username,
+      content
+    });
+  } catch (e) {
+    console.error("Failed to send message:", e);
+  }
+};
+
+const toggleChat = () => {
+  chatState.isOpen = !chatState.isOpen;
+  if (chatState.isOpen) {
+    chatState.unreadCount = 0;
+  }
+};
 
 interface Property {
   name: string;
@@ -1610,6 +1654,18 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
         :in-jail="myPlayerData.in_jail"
         :property-count="myPlayerData.properties.length"
         :players="gameState.players"
+      />
+
+      <ChatIcon 
+        :unread-count="chatState.unreadCount" 
+        :is-open="chatState.isOpen" 
+        @toggle="toggleChat"
+      />
+      <ChatPanel 
+        v-if="chatState.isOpen" 
+        :messages="chatState.messages" 
+        :current-user="username" 
+        @send="handleSendMessage"
       />
   </div>
 
