@@ -376,10 +376,13 @@ impl MutationRoot {
             return Err(Error::new("Username already exists"));
         }
 
+        let password_hash = bcrypt::hash(&password, bcrypt::DEFAULT_COST)
+            .map_err(|_| Error::new("Failed to hash password"))?;
+
         let new_user = User {
             id: None,
             username: username.clone(),
-            password_hash: password, // TODO: Hash this
+            password_hash, // Salvăm hash-ul, nu parola default
             created_at: Utc::now().to_rfc3339(),
         };
 
@@ -398,7 +401,8 @@ impl MutationRoot {
 
         match user_opt {
             Some(user) => {
-                if user.password_hash != password {
+                let valid = bcrypt::verify(&password, &user.password_hash).unwrap_or(false);
+                if !valid {
                     return Err(Error::new("Invalid password"));
                 }
                 
