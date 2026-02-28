@@ -124,7 +124,7 @@ impl Game {
             player.here_and_now_cards.push(card2);
         }
 
-        Game {
+        let game = Game {
             board,
             players,
             current_player_idx: 0,
@@ -139,7 +139,9 @@ impl Game {
             activity_log: Vec::new(),
             last_purchase: None,
             pending_reroll: None,
-        }
+        };
+
+        game
     }
 
     fn log_action(&mut self, player_idx: Option<usize>, message: String) {
@@ -166,19 +168,27 @@ impl Game {
         //      Aceste reversale au initiator: Some(X) și from: me / from: X to: me (stampila).
         //
         // NU e valid când am PRIMIT bani (duel câștigat, CollectFromEachPlayer etc.)
-        self.history.iter().rev().take(6).any(|action| {
+        let window_size = 15;
+        // Căutăm CEA MAI RECENTĂ acțiune în care jucătorul a fost implicat ca plătitor/păgubit sau inițiator activ
+        for action in self.history.iter().rev().take(window_size) {
             match action {
-                // Am plătit bani cuiva — nu bancă (from != None), nu eu am inițiat
-                GameAction::Payment { from, to, initiator, .. } => {
-                    *from == Some(player_idx) && to.is_some() && *initiator != Some(player_idx)
+                GameAction::Payment { from, initiator, .. } => {
+                    if *from == Some(player_idx) && *initiator != Some(player_idx) { return true; }
+                    if *initiator == Some(player_idx) { return false; }
                 },
-                // Mi s-a luat o stampilă (swap, steal, TakeAll) — eu eram `from`
                 GameAction::StampTransfer { from, initiator, .. } => {
-                    *from == Some(player_idx) && *initiator != Some(player_idx)
+                    if *from == Some(player_idx) && *initiator != Some(player_idx) { return true; }
+                    if *initiator == Some(player_idx) { return false; }
                 },
-                _ => false
+                GameAction::GoToJail { player_idx: pj } => {
+                    if *pj == player_idx { return false; }
+                },
+                GameAction::Move { player_idx: pm, .. } => {
+                    if *pm == player_idx { return false; }
+                }
             }
-        })
+        }
+        false
     }
 
     pub fn check_can_player_use_discount(&self, player_idx: usize) -> bool {
@@ -1510,29 +1520,44 @@ impl Game {
                 // ====================================================================
 
                 // --- pasul 1: găsim indexul din history al acțiunii de anulat ---
+                let window_size = 15;
                 let found_revert: Option<(usize, GameAction)> = {
                     let recent: Vec<(usize, &GameAction)> = self.history.iter()
                         .enumerate()
                         .rev()
-                        .take(6) // enough window to detect swap pairs
+                        .take(window_size)
                         .collect();
 
                     let mut result = None;
                     for (i, action) in &recent {
-                        let matches = match action {
-                            GameAction::Payment { from, to, initiator, .. } => {
-                                // Valide: eu am plătit cuiva (taxă, duel etc.) — nu bancă, nu eu am inițiat
-                                *from == Some(player_idx) && to.is_some() && from.is_some() && *initiator != Some(player_idx)
+                        let mut resolved = false;
+                        match action {
+                            GameAction::Payment { from, initiator, .. } => {
+                                if *from == Some(player_idx) && *initiator != Some(player_idx) {
+                                    result = Some((*i, (*action).clone()));
+                                    resolved = true;
+                                } else if *initiator == Some(player_idx) {
+                                    resolved = true;
+                                }
                             },
                             GameAction::StampTransfer { from, initiator, .. } => {
-                                // Valide: mi s-a luat o stampilă (swap, steal, TakeAll) — eu eram `from`
-                                *from == Some(player_idx) && *initiator != Some(player_idx)
+                                if *from == Some(player_idx) && *initiator != Some(player_idx) {
+                                    result = Some((*i, (*action).clone()));
+                                    resolved = true;
+                                } else if *initiator == Some(player_idx) {
+                                    resolved = true;
+                                }
                             },
-                            _ => false,
-                        };
-                        if matches {
-                            result = Some((*i, (*action).clone()));
-                            break;
+                            GameAction::GoToJail { player_idx: pj } => {
+                                if *pj == player_idx { resolved = true; }
+                            },
+                            GameAction::Move { player_idx: pm, .. } => {
+                                if *pm == player_idx { resolved = true; }
+                            }
+                        }
+
+                        if resolved {
+                            break; 
                         }
                     }
                     result
@@ -1542,11 +1567,8 @@ impl Game {
                     self.players[player_idx].say_no_cards += 1;
 
                     match action {
-                        // ----------------------------------------------------------
-                        // PAYMENT revert — eu am plătit cuiva, banii se întorc
-                        // ----------------------------------------------------------
+                        // ... (payment revert remains same) ...
                         GameAction::Payment { is_tax: _, from, to, amount, .. } => {
-                            // from == Some(player_idx), to == Some(X): banii de la X înapoi la mine
                             if let (Some(me), Some(creditor)) = (from, to) {
                                 if me == player_idx {
                                     if self.players[creditor].pay_money(amount) {
@@ -1571,27 +1593,39 @@ impl Game {
 
                             // --- detectăm dacă face parte dintr-un SWAP (pereche de transferuri) ---
                             // Un swap are DOUĂ StampTransfer consecutive cu acelaşi initiator.
+                            // Verificăm și înainte (idx-1) și înapoi (idx+1) pentru a fi siguri.
 
-                            let swap_pair: Option<GameAction> = if idx_in_history > 0 {
-                                self.history.get(idx_in_history - 1).and_then(|prev| {
-                                    if let GameAction::StampTransfer { initiator: prev_init, from: pf, to: pt, .. } = prev {
-                                        if *prev_init == initiator {
-                                            let same_people = match (&from, &to, pf, pt) {
-                                                (Some(a), Some(b), Some(c), Some(d)) => {
-                                                    (*a == *c && *b == *d) || (*a == *d && *b == *c)
-                                                },
-                                                _ => false,
-                                            };
-                                            if same_people {
-                                                return Some(prev.clone());
-                                            }
+                            let mut swap_pair: Option<GameAction> = None;
+                            
+                            // Verificăm înapoi (prev)
+                            if idx_in_history > 0 {
+                                if let Some(GameAction::StampTransfer { initiator: prev_init, from: pf, to: pt, .. }) = self.history.get(idx_in_history - 1) {
+                                    if *prev_init == initiator {
+                                        let same_people = match (&from, &to, pf, pt) {
+                                            (Some(a), Some(b), Some(c), Some(d)) => (*a == *c && *b == *d) || (*a == *d && *b == *c),
+                                            _ => false,
+                                        };
+                                        if same_people {
+                                            swap_pair = Some(self.history[idx_in_history - 1].clone());
                                         }
                                     }
-                                    None
-                                })
-                            } else {
-                                None
-                            };
+                                }
+                            }
+                            
+                            // Dacă nu s-a găsit înapoi, verificăm înainte (next) - CAZUL SNEAKY SWAP unde SayNo a găsit prima acțiune
+                            if swap_pair.is_none() && idx_in_history + 1 < self.history.len() {
+                                if let Some(GameAction::StampTransfer { initiator: next_init, from: nf, to: nt, .. }) = self.history.get(idx_in_history + 1) {
+                                    if *next_init == initiator {
+                                        let same_people = match (&from, &to, nf, nt) {
+                                            (Some(a), Some(b), Some(c), Some(d)) => (*a == *c && *b == *d) || (*a == *d && *b == *c),
+                                            _ => false,
+                                        };
+                                        if same_people {
+                                            swap_pair = Some(self.history[idx_in_history + 1].clone());
+                                        }
+                                    }
+                                }
+                            }
 
                             if let Some(other_transfer) = swap_pair {
                                 // ============================================================
@@ -2110,7 +2144,7 @@ impl Game {
                         from: Some(idx),
                         to: None,
                         amount,
-                        initiator: None
+                        initiator: Some(idx)
                     });
                 }
             }
