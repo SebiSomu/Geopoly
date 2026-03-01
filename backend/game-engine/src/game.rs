@@ -2457,6 +2457,8 @@ impl Game {
             }
             Space::JustVisiting => {
                 println!("{}", "👀 Doar în vizită la închisoare.".cyan());
+                let name = self.players[player_idx].name.clone();
+                self.log_action(Some(player_idx), format!("{} arrived at jail but is just visiting", name));
             }
         }
     }
@@ -3104,9 +3106,14 @@ impl Game {
             if let Some(creditor) = creditor_idx {
                 println!("{}", format!("Ultima ștampilă '{}' merge la {}",
                                        stamp.name, self.players[creditor].name).red());
+                let bankrupt_name = self.players[player_idx].name.clone();
+                let creditor_name = self.players[creditor].name.clone();
+                self.log_action(Some(player_idx), format!("{} went bankrupt and gave their last stamp {} to {}", bankrupt_name, stamp.name, creditor_name));
                 self.add_stamp_with_checks(creditor, stamp);
             } else {
                 println!("{}", format!("Ultima ștampilă '{}' revine pe tablă", stamp.name).red());
+                let bankrupt_name = self.players[player_idx].name.clone();
+                self.log_action(Some(player_idx), format!("{} went bankrupt and their last stamp {} returned to the board", bankrupt_name, stamp.name));
                 // When returning to board, the property becomes unowned.
                 // find_destination_by_id and similar will naturally see it's not in anyone's passport.
             }
