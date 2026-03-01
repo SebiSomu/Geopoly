@@ -35,6 +35,14 @@ pub struct Player {
 
     // Track which color sets have already given First Class bonus (one-time per set)
     pub completed_color_sets: HashSet<Color>,
+
+    /// Setat când cineva folosește BlockNextDouble asupra acestui jucător.
+    /// La prima dublă: se mută normal, dar tura termină imediat.
+    pub double_blocked: bool,
+
+    /// Setat când jucătorul trage cardul GoToFreeParking.
+    /// La începutul turei următoare, tura se sare automat.
+    pub skip_next_turn: bool,
 }
 
 impl Player {
@@ -65,6 +73,8 @@ impl Player {
             can_use_steal_first_class: false,
 
             completed_color_sets: HashSet::new(),
+            double_blocked: false,
+            skip_next_turn: false,
         }
     }
 

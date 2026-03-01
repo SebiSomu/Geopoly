@@ -463,6 +463,42 @@ impl Game {
                     });
                 }
 
+                // Verificăm dacă jucătorul are dubla blocată
+                if self.players[player_idx].double_blocked {
+                    self.players[player_idx].double_blocked = false;
+                    self.players[player_idx].consecutive_doubles = 0;
+                    let name = self.players[player_idx].name.clone();
+                    println!("{}", format!("🚫 Dubla lui {} a fost BLOCATĂ! Tura se termină.", name).red());
+                    self.log_action(Some(player_idx), format!("{}'s double was blocked — turn ends", name));
+                    self.end_turn();
+                    return Ok(TurnResult {
+                        die1: d1,
+                        die2: d2,
+                        is_double: true,
+                        is_forced_deal: false,
+                        new_position: self.players[player_idx].position as u8,
+                        went_to_jail: false,
+                        turn_ends: true,
+                        current_player_index: self.current_player_idx as u8,
+                    });
+                }
+
+                // Dacă jucătorul a tras GoToFreeParking în această mutare (dublă),
+                // tura se termină imediat — consecutive_doubles a fost deja resetat în handler
+                if self.players[player_idx].skip_next_turn {
+                    self.end_turn();
+                    return Ok(TurnResult {
+                        die1: d1,
+                        die2: d2,
+                        is_double: true,
+                        is_forced_deal: false,
+                        new_position: self.players[player_idx].position as u8,
+                        went_to_jail: false,
+                        turn_ends: true,
+                        current_player_index: self.current_player_idx as u8,
+                    });
+                }
+
                 // If a decision is pending, turn stops for input but doesn't technically end (still same player's turn context)
                 let pending_decision = matches!(self.step,
                     GameStep::WaitingForTargetSelection { .. } |
@@ -1144,6 +1180,13 @@ impl Game {
             }
             "StealStampAndPay" => {
                 self.handle_steal_stamp_and_pay(selector_idx, target_idx);
+            }
+            "BlockNextDouble" => {
+                self.players[target_idx].double_blocked = true;
+                let selector_name = self.players[selector_idx].name.clone();
+                let target_name_str = self.players[target_idx].name.clone();
+                println!("🚫 {} a blocat următoarea dublă a lui {}!", selector_name, target_name_str);
+                self.log_action(Some(selector_idx), format!("{} blocked next double for {}", selector_name, target_name_str));
             }
             _ => return Err("Acțiune necunoscută".to_string())
         }
@@ -2021,6 +2064,22 @@ impl Game {
                 };
                 println!("💰 Alege o ștampilă din pașaportul tău pentru a o vinde la 150% din preț!");
             },
+            HereAndNowCardAction::BlockNextDouble => {
+                // Poate fi folosit împotriva oricărui jucător (inclusiv în afara turei proprii)
+                let has_targets = self.players.iter().enumerate()
+                    .any(|(i, _)| i != player_idx);
+
+                if !has_targets {
+                    return Err("Nu există alți jucători!".to_string());
+                }
+
+                self.step = GameStep::WaitingForTargetSelection {
+                    action: "BlockNextDouble".to_string(),
+                    card_id: None,
+                    selector_idx: player_idx,
+                };
+                println!("🎯 Alege jucătorul căruia vrei să îi blochezi următoarea dublă!");
+            },
             HereAndNowCardAction::StealFirstClass => {
                 // Căutăm First Class stamp la toți jucătorii (nu doar la cel original)
                 let mut target_idx: Option<usize> = None;
@@ -2107,6 +2166,16 @@ impl Game {
             self.has_rolled_this_turn = false;
 
             self.current_player_idx = (self.current_player_idx + 1) % self.players.len();
+
+            // Dacă jucătorul următor trebuie să sară tura (GoToFreeParking)
+            if self.players[self.current_player_idx].skip_next_turn {
+                self.players[self.current_player_idx].skip_next_turn = false;
+                let name = self.players[self.current_player_idx].name.clone();
+                println!("{}", format!("⏭️ {} sare această tură (Free Parking).", name).bright_yellow());
+                self.log_action(Some(self.current_player_idx), format!("{} skipped turn (Free Parking)", name));
+                // Sărim recursiv la jucătorul următor
+                self.current_player_idx = (self.current_player_idx + 1) % self.players.len();
+            }
 
             if self.players[self.current_player_idx].in_jail {
                 self.step = GameStep::WaitingForJailDecision;
@@ -2415,6 +2484,49 @@ impl Game {
                 } else {
                     println!("Niciun adversar nu are ștampile de furat!");
                 }
+            }
+            ChanceCardAction::GoToFreeParking => {
+                // Mută la Free Parking (poziția 20) — fără M200 de la START
+                let old_pos = self.players[idx].position;
+                self.players[idx].move_to(20);
+                println!("{}", "🅿️ Te duci la FREE PARKING! Sari tura următoare.".bright_yellow());
+
+                self.history.push(GameAction::Move {
+                    player_idx: idx,
+                    from: old_pos as u8,
+                    to: 20,
+                });
+
+                // Colectează ultimele 3 taxe de turist plătite din history
+                let last_3_taxes: Vec<i32> = self.history.iter()
+                    .filter(|a| matches!(a, GameAction::Payment { is_tax: true, from: Some(f), .. } if *f == idx))
+                    .rev()
+                    .take(3)
+                    .map(|a| if let GameAction::Payment { amount, .. } = a { *amount } else { 0 })
+                    .collect();
+
+                let total_refund: i32 = last_3_taxes.iter().sum();
+                if total_refund > 0 {
+                    self.players[idx].add_money(total_refund);
+                    println!("{}", format!("💰 Ai recuperat M{} din ultimele {} taxe de turist plătite!", total_refund, last_3_taxes.len()).green());
+                    self.history.push(GameAction::Payment {
+                        is_tax: false,
+                        from: None,
+                        to: Some(idx),
+                        amount: total_refund,
+                        initiator: Some(idx),
+                    });
+                } else {
+                    println!("{}", "Nu ai taxe de turist plătite de recuperat.".yellow());
+                }
+
+                // Marchează că jucătorul sare tura următoare
+                self.players[idx].skip_next_turn = true;
+                // Forțăm sfârșitul turei IMEDIAT — chiar dacă s-a dat dublă
+                // (resetăm consecutive_doubles ca end_turn() să treacă la jucătorul următor)
+                self.players[idx].consecutive_doubles = 0;
+                let name = self.players[idx].name.clone();
+                self.log_action(Some(idx), format!("{} went to Free Parking, skips next turn, recovered M{} in taxes", name, total_refund));
             }
         }
         Ok(())

@@ -20,6 +20,7 @@ pub enum ChanceCardAction {
     MoveSteps(i32),                      // Înaintează cu 5 spații
     SwapTwoPlayersStamps,                // Doi jucători fac schimb între ultimele lor ștampile
     GetOutOfJailFree,                    // Ieșire gratis din închisoare
+    GoToFreeParking,                     // Du-te la Free Parking (poz 20), sari tura, incasezi ultimele 3 taxe plătite
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -129,6 +130,12 @@ impl ChanceDeck {
                 action: ChanceCardAction::GetOutOfJailFree,
                 can_keep: true,
             },
+            ChanceCard {
+                id: "chance_free_parking".to_string(),
+                description: "Go to Free Parking. Skip your next turn. Do not collect M200. Collect your last 3 tourist taxes paid.".to_string(),
+                action: ChanceCardAction::GoToFreeParking,
+                can_keep: false,
+            },
         ];
 
         let mut rng = thread_rng();
@@ -180,6 +187,7 @@ pub enum HereAndNowCardAction {
     MoveAnywhere,                        // Mergi în orice loc de pe tablă
     CollectTax,                          // Colectează o taxă de turist în loc să plătești
     StampAmnesty,                        // Vinde orice ștampilă din pașaportul tău băncii pentru 150% din prețul original
+    BlockNextDouble,                     // Blochează un jucător ales: la următoarea dublă se mută dar tura îi termină
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -272,6 +280,11 @@ impl HereAndNowDeck {
                 id: "hn_stamp_amnesty".to_string(),
                 description: "Stamp Amnesty! Sell any stamp from your passport back to the bank for 150% of its original price.".to_string(),
                 action: HereAndNowCardAction::StampAmnesty,
+            },
+            HereAndNowCard {
+                id: "hn_block_double".to_string(),
+                description: "Block someone's next double dice roll".to_string(),
+                action: HereAndNowCardAction::BlockNextDouble,
             },
         ];
 

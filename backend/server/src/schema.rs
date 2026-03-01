@@ -305,6 +305,7 @@ fn sync_lobby_state(players: &mut Vec<Player>, game: &Game) {
             server_player.can_use_intercept = game.check_can_player_use_intercept(engine_player_idx);
             server_player.can_use_collect_tax = game.check_can_player_use_collect_tax(engine_player_idx);
             server_player.can_use_steal_first_class = game.check_can_player_use_steal_first_class(engine_player_idx);
+            server_player.skip_next_turn = engine_player.skip_next_turn;
         }
     }
 }
@@ -435,6 +436,7 @@ impl MutationRoot {
                 can_use_intercept: false,
                 can_use_collect_tax: false,
                 can_use_steal_first_class: false,
+                skip_next_turn: false,
             }],
             host: username,
             state: "waiting".to_string(),
@@ -479,6 +481,7 @@ impl MutationRoot {
                   can_use_intercept: false,
                   can_use_collect_tax: false,
                   can_use_steal_first_class: false,
+                  skip_next_turn: false,
               };
              lobby.players.push(new_player.clone());
              

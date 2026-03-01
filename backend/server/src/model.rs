@@ -65,6 +65,8 @@ pub struct Player {
     pub can_use_collect_tax: bool,
     #[serde(default)]
     pub can_use_steal_first_class: bool,
+    #[serde(default)]
+    pub skip_next_turn: bool,
 }
 
 impl Default for Player {
@@ -84,6 +86,7 @@ impl Default for Player {
             can_use_intercept: false,
             can_use_collect_tax: false,
             can_use_steal_first_class: false,
+            skip_next_turn: false,
         }
     }
 }

@@ -118,6 +118,7 @@ interface Player {
   canUseIntercept: boolean;
   canUseCollectTax: boolean;
   canUseStealFirstClass: boolean;
+  skipNextTurn: boolean;
 }
 
 interface GameState {
@@ -290,7 +291,8 @@ watchEffect(() => {
         canUseDiscount: p.canUseDiscount || false,
         canUseIntercept: p.canUseIntercept || false,
         canUseCollectTax: p.canUseCollectTax || false,
-        canUseStealFirstClass: p.canUseStealFirstClass || false
+        canUseStealFirstClass: p.canUseStealFirstClass || false,
+        skipNextTurn: p.skipNextTurn || false
       }))
 
       // Detect money changes for animations
@@ -917,6 +919,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
           <div class="mini-info">
             <div class="mini-token-box">
               <GameToken :type="player.character" />
+              <span v-if="player.skipNextTurn" class="sleeping-indicator">💤</span>
             </div>
             <span class="mini-name">{{ player.name }}</span>
           </div>
@@ -1788,6 +1791,21 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
   width: 32px;
   height: 32px;
   flex-shrink: 0;
+  position: relative;
+}
+
+.sleeping-indicator {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  font-size: 14px;
+  animation: sleep-pulse 2s ease-in-out infinite;
+  z-index: 10;
+}
+
+@keyframes sleep-pulse {
+  0%, 100% { opacity: 0.7; transform: scale(1); }
+  50% { opacity: 1; transform: scale(1.1); }
 }
 
 .mini-name {

@@ -38,8 +38,8 @@ const getCardStatus = (card: any) => {
   if (props.isGameOver) return { playable: false, hint: 'Game Over' };
   const desc = card.description.toLowerCase();
   
-  // Movement cards
-  if (desc.includes('advance 5 spaces') || desc.includes('go to any space')) {
+  // Movement cards (includes Advance 5 spaces, Go to any space, Go to Free Parking)
+  if (desc.includes('advance 5 spaces') || desc.includes('go to any space') || desc.includes('free parking')) {
     if (props.inJail) return { playable: false, hint: 'In jail' };
     if (!props.isMyTurn) return { playable: false, hint: 'Not your turn' };
   }
@@ -114,6 +114,12 @@ const getCardStatus = (card: any) => {
   // Stamp Amnesty — requires at least one stamp in your own passport
   if (desc.includes('stamp amnesty') || desc.includes('sell a stamp')) {
     if (props.propertyCount === 0) return { playable: false, hint: 'No stamps to sell' };
+  }
+
+  // Block Double — requires other players to target
+  if (desc.includes('block double') || desc.includes('block a player')) {
+    const hasOthers = props.players.some(p => p.username !== props.username);
+    if (!hasOthers) return { playable: false, hint: 'No other players' };
   }
 
   return { playable: true, hint: 'Tap to play' };
