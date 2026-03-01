@@ -1,6 +1,8 @@
 use crate::passport::Passport;
 use crate::cards::HereAndNowCard;
+use crate::board::Color;
 use serde::{Serialize, Deserialize};
+use std::collections::HashSet;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Player {
@@ -30,6 +32,9 @@ pub struct Player {
     pub can_use_intercept: bool,
     pub can_use_collect_tax: bool,
     pub can_use_steal_first_class: bool,
+
+    // Track which color sets have already given First Class bonus (one-time per set)
+    pub completed_color_sets: HashSet<Color>,
 }
 
 impl Player {
@@ -58,6 +63,8 @@ impl Player {
             can_use_intercept: false,
             can_use_collect_tax: false,
             can_use_steal_first_class: false,
+
+            completed_color_sets: HashSet::new(),
         }
     }
 

@@ -3049,8 +3049,12 @@ impl Game {
             if let Some(dest) = self.board.find_destination_by_id(id) {
                 if let Some(color_set) = self.board.color_sets.get(&dest.color) {
                     if self.players[player_idx].has_color_set(color_set) {
-                        println!("{}", "🎉 Ai completat setul de culoare! Primești o stampilă Clasa Întâi GRATIS!".bright_green());
-                        self.give_first_class_stamp(player_idx, true);
+                        // Check if we already got First Class for this color set (one-time bonus)
+                        if !self.players[player_idx].completed_color_sets.contains(&dest.color) {
+                            println!("{}", "🎉 Ai completat setul de culoare! Primești o stampilă Clasa Întâi GRATIS!".bright_green());
+                            self.players[player_idx].completed_color_sets.insert(dest.color.clone());
+                            self.give_first_class_stamp(player_idx, true);
+                        }
                     }
                 }
             }
