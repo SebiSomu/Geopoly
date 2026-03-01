@@ -134,11 +134,6 @@ impl ChanceDeck {
         let mut rng = thread_rng();
         cards.shuffle(&mut rng);
 
-        if let Some(pos) = cards.iter().position(|c| c.id == "chance_swap_stamps") {
-                    let card = cards.remove(pos);
-                    cards.push(card);
-                }
-
         ChanceDeck {
             cards,
             discard_pile: Vec::new(),
