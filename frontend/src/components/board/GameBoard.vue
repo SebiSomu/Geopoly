@@ -1660,6 +1660,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
         :in-jail="myPlayerData.in_jail"
         :property-count="myPlayerData.properties.length"
         :players="gameState.players"
+        :is-game-over="gameState.isGameOver"
       />
 
       <ChatIcon 

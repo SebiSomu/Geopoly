@@ -12,6 +12,7 @@ const props = defineProps<{
   inJail: boolean;
   propertyCount: number;
   players: any[];
+  isGameOver: boolean;
 }>();
 
 const emit = defineEmits(['refresh']);
@@ -34,6 +35,7 @@ const useCard = async (cardId: string) => {
 };
 
 const getCardStatus = (card: any) => {
+  if (props.isGameOver) return { playable: false, hint: 'Game Over' };
   const desc = card.description.toLowerCase();
   
   // Movement cards
