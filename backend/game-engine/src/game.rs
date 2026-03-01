@@ -106,6 +106,7 @@ pub struct Game {
     pub last_purchase: Option<PurchaseRecord>,
     pub pending_reroll: Option<PendingReroll>,
     pub previous_step: Option<Box<GameStep>>,
+    pub has_rolled_this_turn: bool,
 }
 
 impl Game {
@@ -141,6 +142,7 @@ impl Game {
             last_purchase: None,
             pending_reroll: None,
             previous_step: None,
+            has_rolled_this_turn: false,
         };
 
         game
@@ -174,8 +176,9 @@ impl Game {
         // Căutăm CEA MAI RECENTĂ acțiune în care jucătorul a fost implicat ca plătitor/păgubit sau inițiator activ
         for action in self.history.iter().rev().take(window_size) {
             match action {
-                GameAction::Payment { from, initiator, .. } => {
-                    if *from == Some(player_idx) && *initiator != Some(player_idx) { return true; }
+                GameAction::Payment { from, to, initiator, .. } => {
+                    // Say No e valid doar când plătesc altui jucător (to: Some(player)), nu băncii (to: None)
+                    if *from == Some(player_idx) && *initiator != Some(player_idx) && *to != None { return true; }
                     if *initiator == Some(player_idx) { return false; }
                 },
                 GameAction::StampTransfer { from, initiator, .. } => {
@@ -306,9 +309,20 @@ impl Game {
             return self.handle_jail_roll();
         }
 
-        // --- Logică Normală ---
+        // --- BLOCAJ RE-ROLL NEAUTORIZAT ---
+        // Jucătorul poate rola din nou DOAR dacă are duble consecutive active.
+        // - Cărți Here&Now de mișcare (MoveSteps/MoveAnywhere): nu apelează roll_dice => neafectate
+        // - RerollOneDice: prins mai sus prin WaitingForRerollDice => neafectat
+        // - GetOutOfJail PayFine/UseCard: NU setează has_rolled => trece de check
+        if self.has_rolled_this_turn && self.players[player_idx].consecutive_doubles == 0 {
+            return Err("Ai rulat deja zarurile în această tură!".to_string());
+        }
+
         let dice_result = Self::roll_dice_internal(); // Folosim funcția statică existentă
         self.display_dice_result(&dice_result);
+
+        // Marcăm că s-a rulat în această tură
+        self.has_rolled_this_turn = true;
 
         match dice_result {
             DiceResult::BusinessDeal(val) => {
@@ -493,8 +507,8 @@ impl Game {
             DiceResult::BusinessDeal(b) => (1, b, true),
         };
 
-        // Asigurăm că salvăm ultimele zaruri pentru sincronizarea cu UI-ul
         self.last_dice = Some((d1, d2));
+        self.has_rolled_this_turn = true;
 
         if let DiceResult::Double(val) = dice_result {
             println!("\n{}", "🎉 Ai dat dublă! Ești liber!".bright_green());
@@ -610,14 +624,15 @@ impl Game {
                     self.players[player_idx].release_from_jail();
                     let name = self.players[player_idx].name.clone();
                     self.log_action(Some(player_idx), format!("{} paid $100 up to get out of jail", name));
-                    self.end_turn();
+                    // NU end_turn() — jucătorul poate rola acum; has_rolled_this_turn rămâne false
+                    self.step = GameStep::WaitingForRoll;
                     Ok(TurnResult {
                         die1: 0, die2: 0,
                         is_double: false,
                         is_forced_deal: false,
                         new_position: self.players[player_idx].position as u8,
                         went_to_jail: false,
-                        turn_ends: true,
+                        turn_ends: false,
                         current_player_index: self.current_player_idx as u8,
                     })
                 } else {
@@ -632,14 +647,15 @@ impl Game {
                     self.players[player_idx].release_from_jail();
                     let name = self.players[player_idx].name.clone();
                     self.log_action(Some(player_idx), format!("{} used a Get Out of Jail Free card", name));
-                    self.end_turn();
+                    // NU end_turn() — jucătorul poate rola acum
+                    self.step = GameStep::WaitingForRoll;
                     Ok(TurnResult {
                         die1: 0, die2: 0,
                         is_double: false,
                         is_forced_deal: false,
                         new_position: self.players[player_idx].position as u8,
                         went_to_jail: false,
-                        turn_ends: true,
+                        turn_ends: false,
                         current_player_index: self.current_player_idx as u8,
                     })
                 } else if let Some(pos) = self.players[player_idx].here_and_now_cards.iter().position(|c| matches!(c.action, HereAndNowCardAction::GetOutOfJailFree)) {
@@ -648,14 +664,15 @@ impl Game {
                     self.players[player_idx].release_from_jail();
                     let name = self.players[player_idx].name.clone();
                     self.log_action(Some(player_idx), format!("{} used a Get Out of Jail Free card", name));
-                    self.end_turn();
+                    // NU end_turn() — jucătorul poate rola acum
+                    self.step = GameStep::WaitingForRoll;
                     Ok(TurnResult {
                         die1: 0, die2: 0,
                         is_double: false,
                         is_forced_deal: false,
                         new_position: self.players[player_idx].position as u8,
                         went_to_jail: false,
-                        turn_ends: true,
+                        turn_ends: false,
                         current_player_index: self.current_player_idx as u8,
                     })
                 } else {
@@ -1038,7 +1055,7 @@ impl Game {
             is_forced_deal: false,
             new_position: self.players[player_idx].position as u8,
             went_to_jail: false,
-            turn_ends: false, 
+            turn_ends: false,
             current_player_index: self.current_player_idx as u8,
         })
     }
@@ -1161,12 +1178,19 @@ impl Game {
                 }
             } else {
                 // Another player used a reactive card against the current player
-                // Preserve the current player's reroll state - they should still get to roll the reroll
+                // Restore the current player's reroll state - they should still get to roll the reroll
                 if self.pending_reroll.is_some() {
                     // Restore reroll state for the current player
                     self.step = GameStep::WaitingForRerollDice { player_idx: self.current_player_idx };
+                } else if let Some(prev) = self.previous_step.take() {
+                    // Restaurăm previous_step dacă există
+                    self.step = *prev;
+                } else if self.has_rolled_this_turn && self.players[self.current_player_idx].consecutive_doubles == 0 {
+                    // Jucătorul curent a rulat deja și nu are dublă activă => tura s-a terminat
+                    self.step = GameStep::WaitingForRoll;
+                    self.end_turn();
                 } else {
-                    // No reroll pending, just continue with normal turn
+                    // Nu a rulat încă sau are dublă activă => rămâne WaitingForRoll
                     self.step = GameStep::WaitingForRoll;
                 }
             }
@@ -1610,8 +1634,9 @@ impl Game {
                     for (i, action) in &recent {
                         let mut resolved = false;
                         match action {
-                            GameAction::Payment { from, initiator, .. } => {
-                                if *from == Some(player_idx) && *initiator != Some(player_idx) {
+                            GameAction::Payment { from, to, initiator, .. } => {
+                                // Say No valid only when paying to another player (to: Some(player)), not bank (to: None)
+                                if *from == Some(player_idx) && *initiator != Some(player_idx) && *to != None {
                                     result = Some((*i, (*action).clone()));
                                     resolved = true;
                                 } else if *initiator == Some(player_idx) {
@@ -1635,7 +1660,7 @@ impl Game {
                         }
 
                         if resolved {
-                            break; 
+                            break;
                         }
                     }
                     result
@@ -1674,7 +1699,7 @@ impl Game {
                             // Verificăm și înainte (idx-1) și înapoi (idx+1) pentru a fi siguri.
 
                             let mut swap_pair: Option<GameAction> = None;
-                            
+
                             // Verificăm înapoi (prev)
                             if idx_in_history > 0 {
                                 if let Some(GameAction::StampTransfer { initiator: prev_init, from: pf, to: pt, .. }) = self.history.get(idx_in_history - 1) {
@@ -1689,7 +1714,7 @@ impl Game {
                                     }
                                 }
                             }
-                            
+
                             // Dacă nu s-a găsit înapoi, verificăm înainte (next) - CAZUL SNEAKY SWAP unde SayNo a găsit prima acțiune
                             if swap_pair.is_none() && idx_in_history + 1 < self.history.len() {
                                 if let Some(GameAction::StampTransfer { initiator: next_init, from: nf, to: nt, .. }) = self.history.get(idx_in_history + 1) {
@@ -2078,6 +2103,9 @@ impl Game {
             p.intercept_purchase_ready = false;
             p.steal_first_class_ready = false;
 
+            // Resetăm flag-ul de roll la schimbarea turului
+            self.has_rolled_this_turn = false;
+
             self.current_player_idx = (self.current_player_idx + 1) % self.players.len();
 
             if self.players[self.current_player_idx].in_jail {
@@ -2325,9 +2353,8 @@ impl Game {
                 };
             }
             ChanceCardAction::SwapTwoPlayersStamps => {
-                // SNEAKY SWAP: Găsim toți jucătorii care au cel puțin o ștampilă
                 let mut eligible: Vec<usize> = self.players.iter().enumerate()
-                    .filter(|(_, p)| p.passport.stamp_count() > 0)
+                    .filter(|(i, p)| *i != idx && p.passport.stamp_count() > 0)
                     .map(|(i, _)| i)
                     .collect();
 
@@ -2360,7 +2387,7 @@ impl Game {
                                 initiator: None,
                             });
 
-                            self.log_action(None, format!("♻️ Sneaky Swap: {} and {} swapped stamps ('{}' ↔ '{}')!", 
+                            self.log_action(None, format!("♻️ Sneaky Swap: {} and {} swapped stamps ('{}' ↔ '{}')!",
                                 self.players[p1_idx].name, self.players[p2_idx].name, s1.name, s2.name));
 
                             self.add_stamp_with_checks(p1_idx, s2);
