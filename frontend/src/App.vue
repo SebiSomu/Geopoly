@@ -14,7 +14,7 @@ body {
   margin: 0;
   padding: 0;
   overflow: hidden;
-  background-color: #0a1628; /* Monopoly dark blue */
+  background-color: #0a1628; /* Geopoly dark blue */
 }
 
 .fade-enter-active,

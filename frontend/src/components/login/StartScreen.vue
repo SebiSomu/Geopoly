@@ -6,9 +6,6 @@ import RegisterForm from './RegisterForm.vue';
 import Footer from './Footer.vue';
 import Notification from './Notification.vue';
 
-// Remove emit
-// const emit = defineEmits(['start-game']);
-
 const router = useRouter();
 const viewState = ref<'start' | 'login' | 'register'>('start');
 const notification = ref<{ message: string; type: 'error' | 'success' | 'info' } | null>(null);
@@ -62,8 +59,10 @@ const clearNotification = () => {
         <transition name="fade" mode="out-in">
             <div v-if="viewState === 'start'" class="center-content" key="start">
                 <div class="logo-container">
-                    <h1 class="title">MONOPOLY</h1>
-                    <p class="subtitle">WORLD EDITION</p>
+                    <h1 class="title">
+                        <span class="geo">GEO</span><span class="poly">POLY</span>
+                    </h1>
+                    <p class="subtitle"></p>
                 </div>
                 <button class="start-btn" @click="showLogin">START GAME</button>
             </div>
@@ -142,26 +141,36 @@ const clearNotification = () => {
 }
 
 .title {
-    font-size: 3.5rem;
-    font-weight: 900;
-    letter-spacing: 0.5rem;
-    margin: 0;
+    font-family: 'Arial', 'Helvetica', sans-serif;
+    font-size: 80px;
+    font-weight: 700;
+    letter-spacing: 8px;
     text-transform: uppercase;
-    color: white;
-    text-shadow: 
-        0 0 10px rgba(0, 114, 187, 0.6),
-        0 0 20px rgba(0, 114, 187, 0.2);
-    filter: drop-shadow(4px 4px 0px #000);
+    display: flex;
+    justify-content: center;
+    margin: 0;
 }
 
-.subtitle {
-    font-size: 0.9rem;
-    letter-spacing: 1rem;
-    color: #ffd700; 
-    margin: 5px 0 0 0;
-    text-transform: uppercase;
-    font-weight: 700;
-    opacity: 0.8;
+/* NEON OUTLINE - GEO */
+.geo {
+    color: transparent;
+    -webkit-text-stroke: 2.5px #00ffff;
+    text-stroke: 2.5px #00ffff;
+    text-shadow: 
+        0 0 10px #00ffff,
+        0 0 20px #00ffff,
+        0 0 30px #00ffff;
+}
+
+/* NEON OUTLINE - POLY */
+.poly {
+    color: transparent;
+    -webkit-text-stroke: 2.5px #ffff00;
+    text-stroke: 2.5px #ffff00;
+    text-shadow: 
+        0 0 10px #ffff00,
+        0 0 20px #ffff00,
+        0 0 30px #ffff00;
 }
 
 .start-btn {

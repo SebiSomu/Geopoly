@@ -175,7 +175,7 @@ defineExpose({ clearStamps, stamps: processedStamps });
       >
         <!-- Hatched Zone (Inside the column now) -->
         <div class="hatched-zone-bg">
-          <div class="m-circle">M</div>
+          <div class="g-circle">G</div>
         </div>
 
         <div 
@@ -304,7 +304,7 @@ defineExpose({ clearStamps, stamps: processedStamps });
   z-index: 1; /* Keep it below stamps */
 }
 
-.m-circle {
+.g-circle {
   width: 28px;
   height: 28px;
   border: 1.5px solid rgba(0, 0, 0, 0.3);

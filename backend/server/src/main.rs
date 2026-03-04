@@ -8,7 +8,7 @@ use axum::{
     Server,
 };
 use database::DB;
-use schema::{MonopolySchema, MutationRoot, QueryRoot};
+use schema::{GeopolySchema, MutationRoot, QueryRoot};
 use std::net::SocketAddr;
 use tower_http::cors::{Any, CorsLayer};
 
@@ -17,7 +17,7 @@ mod model;
 mod schema;
 
 async fn graphql_handler(
-    schema: Extension<MonopolySchema>,
+    schema: Extension<GeopolySchema>,
     req: GraphQLRequest,
 ) -> GraphQLResponse {
     schema.execute(req.into_inner()).await.into()

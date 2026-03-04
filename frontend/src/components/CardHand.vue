@@ -88,7 +88,7 @@ const getCardStatus = (card: any) => {
   }
 
   // Discount Purchase (M100)
-  if (desc.includes('pay only m100 for that space')) {
+  if (desc.includes('pay only g100 for that space')) {
     const me = props.players.find(p => p.username === props.username);
     if (me && !me.canUseDiscount) {
       return { playable: false, hint: 'Not applicable now' };

@@ -50,7 +50,7 @@ impl Board {
         spaces.push(Space::Start);
 
         // Vom construi tabla în sensul acelor de ceasornic
-        // 40 spații total (ca în Monopoly clasic)
+        // 40 spații total (ca în Geopoly clasic)
 
         // Destinații conform documentului
         let destinations = vec![
@@ -232,7 +232,7 @@ impl Board {
             },
         ];
 
-        // Construim tabla cu 40 spații (similar Monopoly clasic)
+        // Construim tabla cu 40 spații (similar Geopoly clasic)
         // Poziționăm destinațiile și spațiile speciale strategic
 
         spaces.push(Space::Destination(destinations[0].clone())); // Madrid

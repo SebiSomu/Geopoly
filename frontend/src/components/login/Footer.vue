@@ -1,6 +1,6 @@
 <template>
   <footer class="login-footer">
-    <p>&copy; 2026 Monopoly World Edition. All rights reserved.</p>
+    <p>&copy; 2026 Geopoly. All rights reserved.</p>
   </footer>
 </template>
 

@@ -1,6 +1,6 @@
 <script setup lang="ts">
 /**
- * Stamp.vue - High-fidelity circular stamp for Monopoly World Edition
+ * Stamp.vue - High-fidelity circular stamp for Geopoly
  * Features: Circular text, side dots, matte ink look.
  */
 import { computed, type CSSProperties } from 'vue';
@@ -66,7 +66,7 @@ const stampStyle = computed<CSSProperties>(() => ({
       xmlns="http://www.w3.org/2000/svg"
     >
       <defs>
-        <!-- Circular path for Top text (MONOPOLY) -->
+        <!-- Circular path for Top text (GEOPOLY) -->
         <path :id="`topPath-${id}`" d="M 20,50 A 30,30 0 1,1 80,50" />
         <!-- Circular path for Bottom text (PROPERTY NAME) -->
         <path :id="`bottomPath-${id}`" d="M 20,50 A 30,30 0 0,0 80,50" />

@@ -67,7 +67,7 @@ const stampColor = (color: string) => COLOR_MAP[color.toLowerCase()] ?? '#bdbdbd
 
           <div class="stamp-info">
             <div class="sname">{{ stamp.name }}</div>
-            <div class="sprice">Sell for M{{ Math.floor(stamp.price * 1.5) }}</div>
+            <div class="sprice">Sell for G{{ Math.floor(stamp.price * 1.5) }}</div>
           </div>
 
           <div class="sell-tag">SELL</div>

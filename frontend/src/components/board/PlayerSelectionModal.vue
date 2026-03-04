@@ -80,7 +80,7 @@ const actionText = computed(() => {
           <div class="player-info">
             <div class="name">{{ player.name }}</div>
             <div class="stats">
-              <span class="money">M{{ player.money }}</span>
+              <span class="money">G{{ player.money }}</span>
               <span class="separator">•</span>
               <span class="stamps">{{ player.properties.length }} stamps</span>
             </div>

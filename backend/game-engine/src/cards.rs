@@ -9,14 +9,14 @@ use serde::{Serialize, Deserialize};
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ChanceCardAction {
     StealStampAndPay,                    // Ia ultima ștampilă a unui jucător, dar plătește-i valoarea integrală
-    PayHospital,                         // Plătește M200 pentru spitalizare
-    FirstClassBonus,                     // Colectează M40 pentru fiecare ștampilă First Class (x2)
-    CollectFromEachPlayer(u32),          // Toți jucătorii îți plătesc M40
+    PayHospital,                         // Plătește G200 pentru spitalizare
+    FirstClassBonus,                     // Colectează G40 pentru fiecare ștampilă First Class (x2)
+    CollectFromEachPlayer(u32),          // Toți jucătorii îți plătesc G40
     RerollOneDice,                        // Aruncă din nou unul din zaruri și mută
     GoToJail,                            // Mergi la închisoare
     AdvanceToStart,                      // Avansează la START
     DiceChallenge,                       // Alege un jucător; dați amândoi cu zarul (x2)
-    CollectMoney(u32),                   // Colectează M100 de la bancă
+    CollectMoney(u32),                   // Colectează G100 de la bancă
     MoveSteps(i32),                      // Înaintează cu 5 spații
     SwapTwoPlayersStamps,                // Doi jucători fac schimb între ultimele lor ștampile
     GetOutOfJailFree,                    // Ieșire gratis din închisoare
@@ -48,25 +48,25 @@ impl ChanceDeck {
             },
             ChanceCard {
                 id: "chance_hospital".to_string(),
-                description: "Pay a hospital tax of M200.".to_string(),
+                description: "Pay a hospital tax of G200.".to_string(),
                 action: ChanceCardAction::PayHospital,
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_first_class_1".to_string(),
-                description: "Bonus for \"First Class\"! Collect M40 for each \"First Class\" stamp in your passport.".to_string(),
+                description: "Bonus for \"First Class\"! Collect G40 for each \"First Class\" stamp in your passport.".to_string(),
                 action: ChanceCardAction::FirstClassBonus,
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_first_class_2".to_string(),
-                description: "Bonus for \"First Class\"! Collect M40 for each \"First Class\" stamp in your passport.".to_string(),
+                description: "Bonus for \"First Class\"! Collect G40 for each \"First Class\" stamp in your passport.".to_string(),
                 action: ChanceCardAction::FirstClassBonus,
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_collect_each".to_string(),
-                description: "Each player pays you M40.".to_string(),
+                description: "Each player pays you G40.".to_string(),
                 action: ChanceCardAction::CollectFromEachPlayer(40),
                 can_keep: false,
             },
@@ -78,7 +78,7 @@ impl ChanceDeck {
             },
             ChanceCard {
                 id: "chance_jail".to_string(),
-                description: "Go to Jail! Go directly to Jail. Do not pass START. Do not collect M200.".to_string(),
+                description: "Go to Jail! Go directly to Jail. Do not pass START. Do not collect G200.".to_string(),
                 action: ChanceCardAction::GoToJail,
                 can_keep: false,
             },
@@ -90,25 +90,25 @@ impl ChanceDeck {
             },
             ChanceCard {
                 id: "chance_dice_challenge_1".to_string(),
-                description: "Choose another player; both roll a die. The player with the higher roll pays the other M100.".to_string(),
+                description: "Choose another player; both roll a die. The player with the higher roll pays the other G100.".to_string(),
                 action: ChanceCardAction::DiceChallenge,
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_dice_challenge_2".to_string(),
-                description: "Choose another player; both roll a die. The player with the higher roll pays the other M100.".to_string(),
+                description: "Choose another player; both roll a die. The player with the higher roll pays the other G100.".to_string(),
                 action: ChanceCardAction::DiceChallenge,
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_collect_100".to_string(),
-                description: "Collect M100 from the bank.".to_string(),
+                description: "Collect G100 from the bank.".to_string(),
                 action: ChanceCardAction::CollectMoney(100),
                 can_keep: false,
             },
             ChanceCard {
                 id: "chance_collect_100_2".to_string(),
-                description: "Collect M100 from the bank.".to_string(),
+                description: "Collect G100 from the bank.".to_string(),
                 action: ChanceCardAction::CollectMoney(100),
                 can_keep: false,
             },
@@ -132,7 +132,7 @@ impl ChanceDeck {
             },
             ChanceCard {
                 id: "chance_free_parking".to_string(),
-                description: "Go to Free Parking. Skip your next turn. Do not collect M200. Collect your last 3 tourist taxes paid.".to_string(),
+                description: "Go to Free Parking. Skip your next turn. Do not collect G200. Collect your last 3 tourist taxes paid.".to_string(),
                 action: ChanceCardAction::GoToFreeParking,
                 can_keep: false,
             },
@@ -181,8 +181,8 @@ pub enum HereAndNowCardAction {
     GetOutOfJailFree,                    // Ieșire gratis din închisoare
     SwapStamps,                          // Schimbă ultima ta ștampilă cu ultima ștampilă a altui jucător (x2)
     TakeAllLastStamps,                   // Ia ultima ștampilă de la TOȚI jucătorii
-    DiscountPurchase,                    // Când aterizezi pe un loc nedeținut, plătești doar M100
-    CollectFromRichest,                  // Jucătorul cu cele mai multe ștampile îți plătește M200
+    DiscountPurchase,                    // Când aterizezi pe un loc nedeținut, plătești doar G100
+    CollectFromRichest,                  // Jucătorul cu cele mai multe ștampile îți plătește G200
     StealFirstClass,                     // Fură ștampila First Class a altui jucător când o primește
     MoveAnywhere,                        // Mergi în orice loc de pe tablă
     CollectTax,                          // Colectează o taxă de turist în loc să plătești
@@ -253,12 +253,12 @@ impl HereAndNowDeck {
             },
             HereAndNowCard {
                 id: "hn_discount".to_string(),
-                description: "When you land on an unowned space, pay only M100 for that space.".to_string(),
+                description: "When you land on an unowned space, pay only G100 for that space.".to_string(),
                 action: HereAndNowCardAction::DiscountPurchase,
             },
             HereAndNowCard {
                 id: "hn_collect_richest".to_string(),
-                description: "The player with the most stamps pays you M200.".to_string(),
+                description: "The player with the most stamps pays you G200.".to_string(),
                 action: HereAndNowCardAction::CollectFromRichest,
             },
             HereAndNowCard {

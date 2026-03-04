@@ -351,7 +351,7 @@ pub struct QueryRoot;
 #[Object]
 impl QueryRoot {
     async fn hello(&self) -> String {
-        "Hello from Monopoly backend (Game Engine Integrated)!".to_string()
+        "Hello from Geopoly backend (Game Engine Integrated)!".to_string()
     }
 
     async fn get_lobby(&self, ctx: &Context<'_>, code: String) -> Result<Option<Lobby>> {
@@ -1240,7 +1240,7 @@ pub struct RollResult {
     pub current_turn_index: u8,
 }
 
-pub type MonopolySchema = Schema<QueryRoot, MutationRoot, SubscriptionRoot>;
+pub type GeopolySchema = Schema<QueryRoot, MutationRoot, SubscriptionRoot>;
 
 fn generate_code() -> String {
     rand::thread_rng()

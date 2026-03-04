@@ -14,7 +14,7 @@ impl DB {
     pub async fn init() -> Self {
         let uri = env::var("MONGODB_URI").unwrap_or_else(|_| "mongodb://localhost:27017".to_string());
         let client = Client::with_uri_str(&uri).await.expect("Failed to create MongoDB client");
-        let db = client.database("monopoly_world");
+        let db = client.database("geopoly");
         DB { client, db }
     }
 

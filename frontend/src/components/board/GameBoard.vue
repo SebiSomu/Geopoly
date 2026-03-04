@@ -301,7 +301,7 @@ watchEffect(() => {
         if (oldP && oldP.money !== np.money) {
           const diff = np.money - oldP.money;
           const type: 'plus' | 'minus' = diff > 0 ? 'plus' : 'minus';
-          const amountStr = (diff > 0 ? '+' : '-') + 'M' + Math.abs(diff);
+          const amountStr = (diff > 0 ? '+' : '-') + 'G' + Math.abs(diff);
           
           // Add notification
           const id = notificationId++;
@@ -924,7 +924,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
             <span class="mini-name">{{ player.name }}</span>
           </div>
           <div class="mini-money-wrap">
-             <span class="mini-money">M{{ player.money }}</span>
+             <span class="mini-money">G{{ player.money }}</span>
              <!-- Small floating animations within the card context -->
              <TransitionGroup name="money-anim">
                <span 
@@ -1001,7 +1001,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
             <div class="space-content">
               <template v-if="space.type === 'destination'">
                 <span class="space-name">{{ space.name }}</span>
-                <span class="space-price">M{{ space.price }}</span>
+                <span class="space-price">G{{ space.price }}</span>
               </template>
               <template v-else>
                 <div class="special-content-wrapper">
@@ -1011,14 +1011,14 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                     <div class="elegant-star-ring-v2">
                       <div class="elegant-star-v2">★</div>
                     </div>
-                    <span class="special-price">M100</span>
+                    <span class="special-price">G100</span>
                   </div>
                   
                   <!-- Airport -->
                   <div v-else-if="space.type === 'airport'" class="airport-content">
                     <span class="special-label">AIRPORT</span>
                     <div class="airport-emoji">✈️</div>
-                    <span class="special-price">M100</span>
+                    <span class="special-price">G100</span>
                   </div>
 
                   <!-- Here & Now (Preserved) -->
@@ -1088,7 +1088,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
             <div class="space-content">
               <template v-if="space.type === 'destination'">
                 <span class="space-name">{{ space.name }}</span>
-                <span class="space-price">M{{ space.price }}</span>
+                <span class="space-price">G{{ space.price }}</span>
               </template>
               <template v-else>
                 <div class="special-content-wrapper">
@@ -1098,14 +1098,14 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                     <div class="elegant-star-ring-v2">
                       <div class="elegant-star-v2">★</div>
                     </div>
-                    <span class="special-price">M100</span>
+                    <span class="special-price">G100</span>
                   </div>
                   
                   <!-- Airport -->
                   <div v-else-if="space.type === 'airport'" class="airport-content">
                     <span class="special-label">AIRPORT</span>
                     <div class="airport-emoji">✈️</div>
-                    <span class="special-price">M100</span>
+                    <span class="special-price">G100</span>
                   </div>
 
                   <!-- Here & Now (Preserved) -->
@@ -1207,7 +1207,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                       @click="handleResolveJailDecision('PayFine')"
                       :disabled="!isMyJailDecision || (myPlayerData?.money || 0) < 100"
                     >
-                      <span class="opt-label">PAY M100</span>
+                      <span class="opt-label">PAY G100</span>
                       <span class="opt-desc">Get out now</span>
                     </button>
 
@@ -1307,7 +1307,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
             <div class="modal-content">
               <h3>🏠 Buy Property?</h3>
               <p class="property-name">{{ gameState.pendingPurchase.destName }}</p>
-              <p class="property-price">Price: M{{ gameState.pendingPurchase.price }}</p>
+              <p class="property-price">Price: G{{ gameState.pendingPurchase.price }}</p>
               <div class="modal-buttons">
                 <button class="modal-btn buy" @click="handlePurchaseDecision(true)">
                   ✅ Buy
@@ -1331,7 +1331,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
               <div class="auction-stats">
                 <div class="stat-box">
                   <span class="stat-label">Current Bid</span>
-                  <span class="stat-value bid-amount">M{{ gameState.pendingAuction.currentBid }}</span>
+                  <span class="stat-value bid-amount">G{{ gameState.pendingAuction.currentBid }}</span>
                 </div>
                 <div class="stat-box">
                   <span class="stat-label">Top Bidder</span>
@@ -1378,7 +1378,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
           <div v-if="gameState.pendingFirstClass && canBuyFirstClass && !gameState.isGameOver" class="first-class-modal">
             <div class="modal-content">
               <h3>✈️ First Class Stamp</h3>
-              <p>Buy a First Class stamp for M100?</p>
+              <p>Buy a First Class stamp for G100?</p>
               <div class="modal-buttons">
                 <button class="modal-btn buy" @click="handleFirstClassDecision(true)">
                   ✅ Buy
@@ -1396,7 +1396,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
               <div class="modal-content airport">
                 <div class="modal-icon mini">✈️</div>
                 <h3>Take a Flight?</h3>
-                <p>Pay M100 to fly to any destination or First Class space!</p>
+                <p>Pay G100 to fly to any destination or First Class space!</p>
                 <div class="modal-buttons">
                   <button class="modal-btn buy" @click="handleAirportDecision(true)">
                     ✅ Fly
@@ -1414,7 +1414,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
             <div class="modal-content">
               <h3>🏠 Buy Property?</h3>
               <p class="property-name">{{ gameState.pendingPurchase.destName }}</p>
-              <p class="property-price">Price: M{{ gameState.pendingPurchase.price }}</p>
+              <p class="property-price">Price: G{{ gameState.pendingPurchase.price }}</p>
               <div class="modal-buttons">
                 <button class="modal-btn buy" @click="handlePurchaseDecision(true)">
                   ✅ Buy
@@ -1469,7 +1469,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
             <div class="space-content">
               <template v-if="space.type === 'destination'">
                 <span class="space-name">{{ space.name }}</span>
-                <span class="space-price">M{{ space.price }}</span>
+                <span class="space-price">G{{ space.price }}</span>
               </template>
               <template v-else>
                 <div class="special-content-wrapper">
@@ -1479,14 +1479,14 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                     <div class="elegant-star-ring-v2">
                       <div class="elegant-star-v2">★</div>
                     </div>
-                    <span class="special-price">M100</span>
+                    <span class="special-price">G100</span>
                   </div>
                   
                   <!-- Airport -->
                   <div v-else-if="space.type === 'airport'" class="airport-content">
                     <span class="special-label">AIRPORT</span>
                     <div class="airport-emoji">✈️</div>
-                    <span class="special-price">M100</span>
+                    <span class="special-price">G100</span>
                   </div>
 
                   <!-- Here & Now (Preserved) -->
@@ -1556,7 +1556,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
             <div class="space-content">
               <template v-if="space.type === 'destination'">
                 <span class="space-name">{{ space.name }}</span>
-                <span class="space-price">M{{ space.price }}</span>
+                <span class="space-price">G{{ space.price }}</span>
               </template>
               <template v-else>
                 <div class="special-content-wrapper">
@@ -1566,14 +1566,14 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
                     <div class="elegant-star-ring-v2">
                       <div class="elegant-star-v2">★</div>
                     </div>
-                    <span class="special-price">M100</span>
+                    <span class="special-price">G100</span>
                   </div>
                   
                   <!-- Airport -->
                   <div v-else-if="space.type === 'airport'" class="airport-content">
                     <span class="special-label">AIRPORT</span>
                     <div class="airport-emoji">✈️</div>
-                    <span class="special-price">M100</span>
+                    <span class="special-price">G100</span>
                   </div>
 
                   <!-- Here & Now (Preserved) -->
@@ -1621,7 +1621,7 @@ const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'to
               <div class="start-arrow-final">➜</div>
             </div>
             <span class="corner-label start-label">START</span>
-            <span class="start-bonus">Collect M200</span>
+            <span class="start-bonus">Collect G200</span>
           </div>
         </div>
       </div>
