@@ -57,12 +57,23 @@ npm run dev
 
 The game defaults to `http://localhost:5173`. For multi-client play, ensure the clients can reach the server's IP address on the network.
 
+Each player logs into every game via a lobby with minimum 2 and maximum 4 players, with unique characters represented as piece from where they can choose from to play with. 
+![WhatsApp Image 2026-03-04 at 11 20 45](https://github.com/user-attachments/assets/62d7ec2b-2f99-40bf-b2cb-788eebdc391d)
+![WhatsApp Image 2026-03-04 at 11 20 58](https://github.com/user-attachments/assets/3902e9a3-c2dc-4bf3-bd43-0e4bcdcb1720)
+
 ## Game Rules Summary
 
 - **Starting State**: Every player begins with G1500 and 2 "Here & Now" cards.
 - **Movement**: Roll two dice. Doubles grant an extra turn (3 doubles in a row sends the player to Jail).
 - **Forced Deal**: Landing on the Business icon triggers a deal where you can swap stamps with opponents.
 - **Winning**: Fill your passport completely or be the last player with capital.
+
+  ![WhatsApp Image 2026-03-04 at 11 21 18](https://github.com/user-attachments/assets/8d280f94-ceea-4da6-b692-0f398cd2a549)
+![WhatsApp Image 2026-03-04 at 11 21 07](https://github.com/user-attachments/assets/11ceabc9-9bff-4efe-a890-645482daf4d8)
+![WhatsApp Image 2026-03-04 at 11 20 07](https://github.com/user-attachments/assets/df11eb4d-33e2-41f3-b563-e1db0a98841d)
+![WhatsApp Image 2026-03-04 at 11 21 38](https://github.com/user-attachments/assets/a8249332-a2f6-40fd-aa0a-ece0628e30e8)
+![WhatsApp Image 2026-03-04 at 11 20 35](https://github.com/user-attachments/assets/81804723-38f7-40fb-b331-ba789b012b74)
+
 
 ## Security Note
 
