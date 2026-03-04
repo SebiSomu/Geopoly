@@ -20,7 +20,7 @@ pub struct Destination {
     pub price: u32,
     pub tourist_tax: u32,
     pub color: Color,
-    pub stamp_diameter: f32, // în cm
+    pub stamp_diameter: f32, // in cm
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -238,7 +238,7 @@ impl Board {
         spaces.push(Space::Destination(destinations[3].clone())); // Cape Town
         spaces.push(Space::Destination(destinations[4].clone())); // Queenstown
 
-        spaces.push(Space::JustVisiting); // Poziția 10
+        spaces.push(Space::JustVisiting); // Position 10
 
         spaces.push(Space::Destination(destinations[5].clone())); // Sydney
         spaces.push(Space::Chance);
@@ -251,7 +251,7 @@ impl Board {
         spaces.push(Space::Destination(destinations[9].clone())); // Moscova
         spaces.push(Space::Destination(destinations[10].clone())); // Londra
 
-        spaces.push(Space::FreeParking); // Poziția 20
+        spaces.push(Space::FreeParking); // Position 20
 
         spaces.push(Space::Destination(destinations[11].clone())); // Belgrad
         spaces.push(Space::Chance);
@@ -264,7 +264,7 @@ impl Board {
         spaces.push(Space::FirstClass);
         spaces.push(Space::Destination(destinations[16].clone())); // Varsovia
 
-        spaces.push(Space::GoToJail); // Poziția 30
+        spaces.push(Space::GoToJail); // Position 30
 
         spaces.push(Space::Destination(destinations[17].clone())); // Istanbul
         spaces.push(Space::Destination(destinations[18].clone())); // Lisabona

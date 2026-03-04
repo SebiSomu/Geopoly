@@ -115,42 +115,6 @@ impl Player {
         self.jail_turns = 0;
     }
 
-    pub fn display_status(&self) {
-        println!("👤 {}", self.name);
-        println!("  💰 Bani: M{}", self.money);
-        println!("  📍 Poziție: {}", self.position);
-
-        if self.in_jail {
-            println!("  🔒 ÎN ÎNCHISOARE (tura {})", self.jail_turns + 1);
-        }
-        if self.get_out_of_jail_free {
-            println!("  🎫 Deține cartonaș 'Ieșire Gratuită din Închisoare' (Șansă)");
-        }
-
-        if self.say_no_cards > 0 {
-            println!("  🛑 'Spune nu!' disponibile: {}", self.say_no_cards);
-        }
-        if self.intercept_purchase_ready {
-            println!("  🎯 Intercept Purchase: ACTIV");
-        }
-        if self.discount_purchase_ready {
-            println!("  💸 Discount Purchase: ACTIV");
-        }
-        if self.collect_tax_ready {
-            println!("  🧾 Collect Tax: ACTIV");
-        }
-        if self.steal_first_class_ready {
-            println!("  ✈️ Steal First Class: ACTIV");
-        }
-
-        if !self.here_and_now_cards.is_empty() {
-            println!("  🎴 Cartonașe Here&Now în mână: {}", self.here_and_now_cards.len());
-        }
-
-        self.passport.display();
-        println!();
-    }
-
     pub fn has_color_set(&self, color_set: &[u8]) -> bool {
         let owned_ids = self.passport.get_destination_ids();
         color_set.iter().all(|id| owned_ids.contains(id))

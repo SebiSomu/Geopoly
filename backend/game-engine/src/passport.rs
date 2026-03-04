@@ -208,27 +208,6 @@ impl Passport {
         }
     }
 
-    pub fn display(&self) {
-        println!("  📘 PAȘAPORT:");
-        println!("    Coloana Stângă (8cm): {:.2}cm umplut", self.left_height_used);
-        for (i, stamp) in self.left_column.iter().enumerate() {
-            println!("      {}. {} (⌀{:.1}cm)", i + 1, stamp.name, stamp.diameter);
-        }
-
-        println!("    Coloana Dreaptă (7cm): {:.2}cm umplut", self.right_height_used);
-        for (i, stamp) in self.right_column.iter().enumerate() {
-            println!("      {}. {} (⌀{:.1}cm)", i + 1, stamp.name, stamp.diameter);
-        }
-
-        if self.is_full() {
-            println!("    🎉 PAȘAPORT PLIN! CÂȘTIGĂTOR!");
-        } else {
-            let left_remaining = LEFT_COLUMN_HEIGHT - self.left_height_used;
-            let right_remaining = RIGHT_COLUMN_HEIGHT - self.right_height_used;
-            println!("    Spațiu rămas: stânga {:.2}cm, dreapta {:.2}cm",
-                     left_remaining, right_remaining);
-        }
-    }
 }
 
 #[cfg(test)]

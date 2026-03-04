@@ -32,6 +32,7 @@ The project is split into two specialized parts for maximum performance and a mo
 - **Rust**: A high-performance, memory-safe language handling all game rules and state.
 - **Juniper / GraphQL**: Efficient communication between the frontend and game engine.
 - **Tokio**: Async runtime for handling multiple concurrent game sessions and clients.
+- **MongoDB**: Secure data persistence that stores the users and the extensive game action history, which is fetched via GraphQL and evaluated contextually in real-time for every action.
 
 ## How to Run
 

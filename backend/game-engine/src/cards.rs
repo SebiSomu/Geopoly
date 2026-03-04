@@ -8,19 +8,19 @@ use serde::{Serialize, Deserialize};
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum ChanceCardAction {
-    StealStampAndPay,                    // Ia ultima ștampilă a unui jucător, dar plătește-i valoarea integrală
-    PayHospital,                         // Plătește G200 pentru spitalizare
-    FirstClassBonus,                     // Colectează G40 pentru fiecare ștampilă First Class (x2)
-    CollectFromEachPlayer(u32),          // Toți jucătorii îți plătesc G40
-    RerollOneDice,                        // Aruncă din nou unul din zaruri și mută
-    GoToJail,                            // Mergi la închisoare
-    AdvanceToStart,                      // Avansează la START
-    DiceChallenge,                       // Alege un jucător; dați amândoi cu zarul (x2)
-    CollectMoney(u32),                   // Colectează G100 de la bancă
-    MoveSteps(i32),                      // Înaintează cu 5 spații
-    SwapTwoPlayersStamps,                // Doi jucători fac schimb între ultimele lor ștampile
-    GetOutOfJailFree,                    // Ieșire gratis din închisoare
-    GoToFreeParking,                     // Du-te la Free Parking (poz 20), sari tura, incasezi ultimele 3 taxe plătite
+    StealStampAndPay,                    // Take a player's last stamp, but pay them its full value
+    PayHospital,                         // Pay G200 for hospitalization
+    FirstClassBonus,                     // Collect G40 for each First Class stamp (x2)
+    CollectFromEachPlayer(u32),          // All players pay you G40
+    RerollOneDice,                        // Reroll one of the dice and move
+    GoToJail,                            // Go to Jail
+    AdvanceToStart,                      // Advance to START
+    DiceChallenge,                       // Choose a player; both roll a die (x2)
+    CollectMoney(u32),                   // Collect G100 from bank
+    MoveSteps(i32),                      // Advance 5 spaces
+    SwapTwoPlayersStamps,                // Two players swap their last stamps
+    GetOutOfJailFree,                    // Get out of jail free
+    GoToFreeParking,                     // Go to Free Parking (pos 20), skip turn, collect last 3 taxes paid
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -154,7 +154,7 @@ impl ChanceDeck {
             self.cards.shuffle(&mut rng);
         }
 
-        // ✅ dacă încă e gol (toate cărțile sunt în mâinile jucătorilor), refacem pachetul
+        // ✅ if still empty (all cards are in players' hands), rebuild the deck
         if self.cards.is_empty() {
             *self = ChanceDeck::new();
         }
@@ -175,19 +175,19 @@ impl ChanceDeck {
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum HereAndNowCardAction {
-    InterceptPurchase,                   // Când un alt jucător cumpără un loc, cumpără-l tu
-    SayNo,                               // Contracărează acțiunile unui jucător împotriva ta (x3)
-    MoveSteps(i32),                      // Înaintează cu 5 spații
-    GetOutOfJailFree,                    // Ieșire gratis din închisoare
-    SwapStamps,                          // Schimbă ultima ta ștampilă cu ultima ștampilă a altui jucător (x2)
-    TakeAllLastStamps,                   // Ia ultima ștampilă de la TOȚI jucătorii
-    DiscountPurchase,                    // Când aterizezi pe un loc nedeținut, plătești doar G100
-    CollectFromRichest,                  // Jucătorul cu cele mai multe ștampile îți plătește G200
-    StealFirstClass,                     // Fură ștampila First Class a altui jucător când o primește
-    MoveAnywhere,                        // Mergi în orice loc de pe tablă
-    CollectTax,                          // Colectează o taxă de turist în loc să plătești
-    StampAmnesty,                        // Vinde orice ștampilă din pașaportul tău băncii pentru 150% din prețul original
-    BlockNextDouble,                     // Blochează un jucător ales: la următoarea dublă se mută dar tura îi termină
+    InterceptPurchase,                   // When another player buys a space, you buy it
+    SayNo,                               // Counters a player's actions against you (x3)
+    MoveSteps(i32),                      // Advance 5 spaces
+    GetOutOfJailFree,                    // Get out of jail free
+    SwapStamps,                          // Swap your last stamp with another player's last stamp (x2)
+    TakeAllLastStamps,                   // Take the last stamp from ALL players
+    DiscountPurchase,                    // When landing on an unowned space, pay only G100
+    CollectFromRichest,                  // The player with the most stamps pays you G200
+    StealFirstClass,                     // Steal another player's First Class stamp when they receive it
+    MoveAnywhere,                        // Go to any space on the board
+    CollectTax,                          // Collect a tourist tax instead of paying
+    StampAmnesty,                        // Sell any stamp from your passport to the bank for 150% of original price
+    BlockNextDouble,                     // Block a chosen player: on next double they move but their turn ends
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
