@@ -5,10 +5,16 @@ import LoginForm from './LoginForm.vue';
 import RegisterForm from './RegisterForm.vue';
 import Footer from './Footer.vue';
 import Notification from './Notification.vue';
+import RulesModal from './RulesModal.vue';
 
 const router = useRouter();
 const viewState = ref<'start' | 'login' | 'register'>('start');
 const notification = ref<{ message: string; type: 'error' | 'success' | 'info' } | null>(null);
+const showRules = ref(false);
+
+const toggleRules = () => {
+    showRules.value = !showRules.value;
+};
 
 const showLogin = () => {
   const savedUser = localStorage.getItem('username');
@@ -65,6 +71,13 @@ const clearNotification = () => {
                     <p class="subtitle"></p>
                 </div>
                 <button class="start-btn" @click="showLogin">START GAME</button>
+                
+                <!-- Rules Button -->
+                <button class="rules-btn" @click="toggleRules" title="Game Rules">
+                    <svg viewBox="0 0 24 24" class="book-icon">
+                        <path fill="currentColor" d="M18,3H6C4.9,3,4,3.9,4,5v14c0,1.1,0.9,2,2,2h12c1.1,0,2-0.9,2-2V5C20,3.9,19.1,3,18,3z M18,19H6V5h1v14h1V5h10V19z M9,7h7v2H9V7z M9,11h7v2H9V11z M9,15h7v2H9V15z"/>
+                    </svg>
+                </button>
             </div>
 
             <div v-else-if="viewState === 'login'" class="center-content form-view" key="login">
@@ -92,6 +105,8 @@ const clearNotification = () => {
             :type="notification.type" 
             @close="clearNotification"
         />
+
+        <RulesModal :is-open="showRules" @close="toggleRules" />
 
         <Footer />
     </div>
@@ -226,6 +241,37 @@ const clearNotification = () => {
 .fade-leave-to {
   opacity: 0;
   transform: translateY(10px);
+}
+
+/* Rules Button */
+.rules-btn {
+    margin-top: 2rem;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: rgba(255, 255, 255, 0.03);
+    border: 1px solid rgba(0, 210, 255, 0.3);
+    color: #00d2ff;
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    cursor: pointer;
+    transition: all 0.4s cubic-bezier(0.175, 0.885, 0.32, 1.275);
+    box-shadow: 0 0 15px rgba(0, 210, 255, 0.1);
+}
+
+.rules-btn:hover {
+    background: rgba(0, 210, 255, 0.15);
+    transform: scale(1.15) rotate(5deg);
+    border-color: #00d2ff;
+    box-shadow: 0 0 30px rgba(0, 210, 255, 0.4);
+    color: #fff;
+}
+
+.book-icon {
+    width: 28px;
+    height: 28px;
+    filter: drop-shadow(0 0 5px rgba(0, 210, 255, 0.5));
 }
 </style>
 
