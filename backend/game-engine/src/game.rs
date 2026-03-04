@@ -38,10 +38,9 @@ pub enum GameStep {
     WaitingForAuction { dest_id: u8, current_bid: i32, highest_bidder: Option<usize> },
     WaitingForJailDecision,
     WaitingForRerollDice { player_idx: usize },
-    WaitingForStampSelection { player_idx: usize, action: String }, // player alege o ștampilă din pașaportul propriu
+    WaitingForStampSelection { player_idx: usize, action: String },
 }
 
-// Add a helper struct to track pending reroll state
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct PendingReroll {
     pub player_idx: usize,
@@ -119,7 +118,6 @@ impl Game {
 
         let mut here_and_now_deck = HereAndNowDeck::new();
 
-        // Fiecare jucător primește 2 cartonașe Here&Now la început
         for player in &mut players {
             let (card1, card2) = here_and_now_deck.deal_initial();
             player.here_and_now_cards.push(card1);
@@ -144,7 +142,6 @@ impl Game {
             previous_step: None,
             has_rolled_this_turn: false,
         };
-
         game
     }
 
@@ -164,20 +161,10 @@ impl Game {
     }
 
     pub fn check_can_player_say_no(&self, player_idx: usize) -> bool {
-        // Say No e valid DOAR când acțiunea recentă m-a dezavantajat:
-        //   1. Am plătit bani cuiva (taxă, duel pierdut etc.)  → Payment { is_tax: false, is_tax: false, from: me, to: Some(X) }
-        //   2. Mi s-a luat o stampilă (swap, steal, TakeAll)   → StampTransfer { from: me, initiator: != me }
-        //   3. Revert-of-revert: Say No-ul adversarului a trimis banii/stampila înapoi la ei,
-        //      adică din perspectiva mea e ca și cum am plătit/pierdut din nou.
-        //      Aceste reversale au initiator: Some(X) și from: me / from: X to: me (stampila).
-        //
-        // NU e valid când am PRIMIT bani (duel câștigat, CollectFromEachPlayer etc.)
         let window_size = 15;
-        // Căutăm CEA MAI RECENTĂ acțiune în care jucătorul a fost implicat ca plătitor/păgubit sau inițiator activ
         for action in self.history.iter().rev().take(window_size) {
             match action {
                 GameAction::Payment { from, to, initiator, .. } => {
-                    // Say No e valid doar când plătesc altui jucător (to: Some(player)), nu băncii (to: None)
                     if *from == Some(player_idx) && *initiator != Some(player_idx) && *to != None { return true; }
                     if *initiator == Some(player_idx) { return false; }
                 },
@@ -217,24 +204,19 @@ impl Game {
 
     pub fn check_can_player_use_intercept(&self, player_idx: usize) -> bool {
         if let Some(record) = &self.last_purchase {
-            // Nu poți intercepta propria cumpărare originală
             if record.buyer_idx == player_idx {
                 return false;
             }
 
-            // Nu poți intercepta ștampile First Class (există un cartonaș dedicat pentru asta)
             if record.is_first_class {
                 return false;
             }
 
-            // Căutăm stampila la toți jucătorii
             for (idx, p) in self.players.iter().enumerate() {
                 if p.passport.find_stamp_index(&record.name).is_some() {
-                    // Stampila există - poți intercepta doar dacă NU o ai tu deja
                     return idx != player_idx;
                 }
             }
-            // Stampila nu există în joc (poate vândută la bancă)
             false
         } else {
             false
@@ -242,11 +224,9 @@ impl Game {
     }
 
     pub fn check_can_player_use_collect_tax(&self, player_idx: usize) -> bool {
-        // Valide doar dacă am plătit o taxă unui alt jucător ÎN TURA CURENTĂ
-        // (după ultimul Move din history)
         for action in self.history.iter().rev().take(5) {
             match action {
-                GameAction::Move { .. } => break, // am depășit tura curentă
+                GameAction::Move { .. } => break,
                 GameAction::Payment { is_tax: true, from, to: Some(_), .. } => {
                     if *from == Some(player_idx) {
                         return true;
@@ -263,16 +243,13 @@ impl Game {
             if !record.is_first_class {
                 return false;
             }
-            // Nu poți fura propria cumpărare originală
             if record.buyer_idx == player_idx {
                 return false;
             }
 
-            // Trebuie ca buyer_idx să aibă încă cel puțin o ștampilă First Class în pașaport
             let buyer = &self.players[record.buyer_idx];
             for stamp in buyer.passport.left_column.iter().chain(buyer.passport.right_column.iter()) {
                 if stamp.destination_id.is_none() {
-                    // Există first class la cel care l-a primit - poți fura
                     return true;
                 }
             }
@@ -287,13 +264,11 @@ impl Game {
             return Err("Game is over!".to_string());
         }
 
-        // Resetăm ultima achiziție pentru a nu permite interceptări din tura anterioară
         self.last_purchase = None;
         if !matches!(self.step, GameStep::WaitingForRoll | GameStep::WaitingForRerollDice { .. }) {
             return Err("Not waiting for roll".to_string());
         }
 
-        // Handle reroll dice case
         if let GameStep::WaitingForRerollDice { player_idx } = self.step {
             if self.current_player_idx != player_idx {
                 return Err("Not your turn to reroll".to_string());
@@ -304,24 +279,17 @@ impl Game {
         let player_idx = self.current_player_idx;
         let in_jail = self.players[player_idx].in_jail;
 
-        // --- Logică Închisoare ---
         if in_jail {
             return self.handle_jail_roll();
         }
 
-        // --- BLOCAJ RE-ROLL NEAUTORIZAT ---
-        // Jucătorul poate rola din nou DOAR dacă are duble consecutive active.
-        // - Cărți Here&Now de mișcare (MoveSteps/MoveAnywhere): nu apelează roll_dice => neafectate
-        // - RerollOneDice: prins mai sus prin WaitingForRerollDice => neafectat
-        // - GetOutOfJail PayFine/UseCard: NU setează has_rolled => trece de check
         if self.has_rolled_this_turn && self.players[player_idx].consecutive_doubles == 0 {
             return Err("Ai rulat deja zarurile în această tură!".to_string());
         }
 
-        let dice_result = Self::roll_dice_internal(); // Folosim funcția statică existentă
+        let dice_result = Self::roll_dice_internal();
         self.display_dice_result(&dice_result);
 
-        // Marcăm că s-a rulat în această tură
         self.has_rolled_this_turn = true;
 
         match dice_result {
@@ -374,7 +342,7 @@ impl Game {
                         is_forced_deal: true,
                         new_position: self.players[player_idx].position as u8,
                         went_to_jail: false,
-                        turn_ends: false, // Așteaptă input
+                        turn_ends: false,
                         current_player_index: self.current_player_idx as u8,
                     })
                 }
@@ -384,9 +352,8 @@ impl Game {
                 self.last_dice = Some((d1, d2));
                 self.move_player(total as i32);
                 self.handle_landing(player_idx);
-                self.players[player_idx].consecutive_doubles = 0; // Reset doubles
+                self.players[player_idx].consecutive_doubles = 0;
 
-                // Only end turn if no decisions are pending
                 let turn_ends = match self.step {
                     GameStep::WaitingForPurchaseDecision { .. } |
                     GameStep::WaitingForFirstClassDecision { .. } |
@@ -463,7 +430,6 @@ impl Game {
                     });
                 }
 
-                // Verificăm dacă jucătorul are dubla blocată
                 if self.players[player_idx].double_blocked {
                     self.players[player_idx].double_blocked = false;
                     self.players[player_idx].consecutive_doubles = 0;
@@ -483,8 +449,6 @@ impl Game {
                     });
                 }
 
-                // Dacă jucătorul a tras GoToFreeParking în această mutare (dublă),
-                // tura se termină imediat — consecutive_doubles a fost deja resetat în handler
                 if self.players[player_idx].skip_next_turn {
                     self.end_turn();
                     return Ok(TurnResult {
@@ -499,7 +463,6 @@ impl Game {
                     });
                 }
 
-                // If a decision is pending, turn stops for input but doesn't technically end (still same player's turn context)
                 let pending_decision = matches!(self.step,
                     GameStep::WaitingForTargetSelection { .. } |
                     GameStep::WaitingForDiceDuel { .. } |
@@ -518,7 +481,7 @@ impl Game {
                     is_forced_deal: false,
                     new_position: self.players[player_idx].position as u8,
                     went_to_jail: false,
-                    turn_ends: pending_decision, // If false, client knows they can roll again after double. If true, it just means current roll action ends.
+                    turn_ends: pending_decision,
                     current_player_index: self.current_player_idx as u8,
                 })
             }
@@ -530,9 +493,6 @@ impl Game {
         self.players[player_idx].jail_turns += 1;
 
         println!("\n{}", "🔒 Încercare evadare din închisoare...".cyan());
-
-        // Simplificare: DOAR aruncăm zarurile (fără opțiune de a plăti momentan în API roll)
-        // În viitor am putea adăuga o metodă `pay_jail_fine`
 
         let dice_result = Self::roll_dice_internal();
         self.display_dice_result(&dice_result);
@@ -552,7 +512,6 @@ impl Game {
             self.move_player((val * 2) as i32);
             self.handle_landing(player_idx);
 
-            // Verificăm dacă tura se încheie (poate a aterizat pe o proprietate)
             let turn_ends = match self.step {
                 GameStep::WaitingForPurchaseDecision { .. } |
                 GameStep::WaitingForFirstClassDecision { .. } |
@@ -612,7 +571,6 @@ impl Game {
                 }
             }
 
-            // Nu a dat dublă și nu a stat 3 ture — rămâne în jail, tura se încheie
             let turn_ends = match self.step {
                 GameStep::WaitingForPurchaseDecision { .. } |
                 GameStep::WaitingForFirstClassDecision { .. } |
@@ -660,7 +618,6 @@ impl Game {
                     self.players[player_idx].release_from_jail();
                     let name = self.players[player_idx].name.clone();
                     self.log_action(Some(player_idx), format!("{} paid $100 up to get out of jail", name));
-                    // NU end_turn() — jucătorul poate rola acum; has_rolled_this_turn rămâne false
                     self.step = GameStep::WaitingForRoll;
                     Ok(TurnResult {
                         die1: 0, die2: 0,
@@ -676,14 +633,12 @@ impl Game {
                 }
             },
             JailAction::UseCard => {
-                // Check if player has the card
                 if let Some(pos) = self.players[player_idx].chance_cards.iter().position(|c| c.id == "jail_free") {
                     let card = self.players[player_idx].chance_cards.remove(pos);
                     self.chance_deck.discard(card);
                     self.players[player_idx].release_from_jail();
                     let name = self.players[player_idx].name.clone();
                     self.log_action(Some(player_idx), format!("{} used a Get Out of Jail Free card", name));
-                    // NU end_turn() — jucătorul poate rola acum
                     self.step = GameStep::WaitingForRoll;
                     Ok(TurnResult {
                         die1: 0, die2: 0,
@@ -700,7 +655,6 @@ impl Game {
                     self.players[player_idx].release_from_jail();
                     let name = self.players[player_idx].name.clone();
                     self.log_action(Some(player_idx), format!("{} used a Get Out of Jail Free card", name));
-                    // NU end_turn() — jucătorul poate rola acum
                     self.step = GameStep::WaitingForRoll;
                     Ok(TurnResult {
                         die1: 0, die2: 0,
@@ -743,7 +697,6 @@ impl Game {
 
             self.handle_landing(player_idx);
 
-            // Check if there are pending decisions that need to be made
             let has_pending_decision = matches!(self.step,
                 GameStep::WaitingForPurchaseDecision { .. } |
                 GameStep::WaitingForFirstClassDecision { .. } |
@@ -755,13 +708,11 @@ impl Game {
                 GameStep::WaitingForForcedDeal
             );
 
-            // Clear the pending reroll state - player has used their reroll
             self.pending_reroll = None;
 
             if has_pending_decision {
-                // Keep the current step (the decision state) - don't end turn yet
             } else {
-                // No pending decision - end the turn, no more rerolls allowed
+
                 self.step = GameStep::WaitingForRoll;
                 self.end_turn();
             }
@@ -801,7 +752,6 @@ impl Game {
                 self.handle_business_deal(player_idx, target_idx);
                 println!("Schimb de ștampile efectuat! Tura se încheie.");
 
-                // Pentru swap, tura se încheie IMEDIAT
                 self.step = GameStep::WaitingForRoll;
                 self.end_turn();
 
@@ -816,7 +766,6 @@ impl Game {
                 });
             },
             "move" => {
-                // Mută cu valoarea de pe die2 (salvată în last_dice)
                 let steps = if let Some((_, d2)) = self.last_dice { d2 as i32 } else { 1 };
                 println!("Ales 'Move': Mută {} spații", steps);
                 self.move_player(steps);
@@ -825,7 +774,6 @@ impl Game {
             _ => return Err("Invalid action".to_string())
         }
 
-        // Pentru move, verificăm dacă am ajuns într-o stare de așteptare decizie
         let turn_ends = match self.step {
             GameStep::WaitingForPurchaseDecision { .. } |
             GameStep::WaitingForFirstClassDecision { .. } |
@@ -835,8 +783,8 @@ impl Game {
             GameStep::WaitingForDiceDuel { .. } |
             GameStep::WaitingForAuction { .. } |
             GameStep::WaitingForRerollDice { .. } => false,
-            GameStep::WaitingForStampSelection { .. } => false,  // Așteaptă decizie
-            _ => true,  // Altfel, tura se încheie
+            GameStep::WaitingForStampSelection { .. } => false,
+            _ => true,
         };
 
         if turn_ends {
@@ -857,7 +805,6 @@ impl Game {
         })
     }
 
-    /// Rezolvă decizia de cumpărare a unei proprietăți
     pub fn resolve_purchase(&mut self, buy: bool) -> Result<TurnResult, String> {
         if self.game_over {
             return Err("Game is over!".to_string());
@@ -867,14 +814,12 @@ impl Game {
             _ => return Err("Not waiting for purchase decision".to_string()),
         };
 
-        let player_idx = buyer_idx; // Use the buyer_idx from the state
+        let player_idx = buyer_idx;
 
         if buy {
-            // Găsește destinația pentru a crea ștampila
             if let Some(dest) = self.board.find_destination_by_id(dest_id) {
                 let dest = dest.clone();
                 if self.players[player_idx].pay_money(price) {
-                    // Înregistrăm achiziția pentru interceptare ulterioară
                     self.last_purchase = Some(PurchaseRecord {
                         dest_id,
                         buyer_idx: player_idx,
@@ -883,7 +828,6 @@ impl Game {
                         is_first_class: false,
                     });
 
-                    // Record Payment
                     self.history.push(GameAction::Payment { is_tax: false,
                         from: Some(player_idx),
                         to: None,
@@ -892,7 +836,6 @@ impl Game {
                     });
 
 
-                    // Cumpărarea proprietății (include verificare set și win)
                     if self.acquire_property(player_idx, &dest) {
                         self.step = GameStep::WaitingForRoll;
                         if buyer_idx == self.current_player_idx {
@@ -914,7 +857,6 @@ impl Game {
             }
         } else {
             println!("Jucătorul a refuzat să cumpere proprietatea.");
-            // Start auction: bidding starts at M20
             println!("{}", "🔨 AUCTION! Bidding starts at M20".bright_yellow());
             self.step = GameStep::WaitingForAuction {
                 dest_id,
@@ -932,7 +874,6 @@ impl Game {
             });
         }
 
-        // Întoarcere la starea anterioară sau WaitingForRoll
         let had_prev = self.previous_step.is_some();
         if let Some(prev) = self.previous_step.take() {
             self.step = *prev;
@@ -952,7 +893,6 @@ impl Game {
         })
     }
 
-    /// Rezolvă decizia de cumpărare First Class
     pub fn resolve_first_class(&mut self, buy: bool) -> Result<TurnResult, String> {
         if self.game_over {
             return Err("Game is over!".to_string());
@@ -966,16 +906,14 @@ impl Game {
 
         if buy {
             if self.players[player_idx].pay_money(100) {
-                // Înregistrăm achiziția pentru interceptare ulterioară
                 self.last_purchase = Some(PurchaseRecord {
-                    dest_id: 0, // Id fictiv pentru First Class
+                    dest_id: 0,
                     buyer_idx: player_idx,
                     price: 100,
                     name: "First Class".to_string(),
                     is_first_class: true,
                 });
 
-                // Record Payment
                 self.history.push(GameAction::Payment { is_tax: false,
                     from: Some(player_idx),
                     to: None,
@@ -990,7 +928,6 @@ impl Game {
 
                 let stamp = Stamp::first_class();
 
-                // Transfer direct de la bancă la cumpărător
                 self.history.push(GameAction::StampTransfer {
                     from: None,
                     to: Some(player_idx),
@@ -1013,7 +950,6 @@ impl Game {
             println!("Jucătorul a refuzat să cumpere First Class.");
         }
 
-        // Întoarcere la starea anterioară sau WaitingForRoll
         let had_prev = self.previous_step.is_some();
         if let Some(prev) = self.previous_step.take() {
             self.step = *prev;
@@ -1033,7 +969,6 @@ impl Game {
         })
     }
 
-    /// Rezolvă decizia de zbor de la Aeroport
     pub fn resolve_airport_decision(&mut self, buy_flight: bool) -> Result<TurnResult, String> {
         if self.game_over {
             return Err("Game is over!".to_string());
@@ -1048,7 +983,6 @@ impl Game {
 
         if buy_flight {
             if self.players[player_idx].pay_money(100) {
-                // Record Payment
                 self.history.push(GameAction::Payment { is_tax: false,
                     from: Some(player_idx),
                     to: None,
@@ -1096,7 +1030,6 @@ impl Game {
         })
     }
 
-    /// Rezolvă alegerea destinației de zbor
     pub fn resolve_airport_destination(&mut self, target_position: u8) -> Result<TurnResult, String> {
         if self.game_over {
             return Err("Game is over!".to_string());
@@ -1110,7 +1043,7 @@ impl Game {
         self.players[idx].position = target_position as usize;
         println!("🛬 {} a aterizat pe poziția {}!", self.players[idx].name, target_position);
 
-        self.step = GameStep::WaitingForRoll; // Reset implicitly for now
+        self.step = GameStep::WaitingForRoll;
         self.handle_landing(idx);
 
         let turn_ends = matches!(self.step, GameStep::WaitingForRoll);
@@ -1143,8 +1076,6 @@ impl Game {
             GameStep::WaitingForTargetSelection { action, card_id, selector_idx } => (action.clone(), card_id.clone(), *selector_idx),
             _ => return Err("Nu ești în etapa de a alege un jucător!".to_string()),
         };
-
-        // Note: Turn validation should happen in schema.rs regarding selector_idx vs current user session
 
         let target_idx = self.players.iter().position(|p| p.name == target_name)
             .ok_or("Jucătorul țintă nu există!")?;
@@ -1191,20 +1122,15 @@ impl Game {
             _ => return Err("Acțiune necunoscută".to_string())
         }
 
-        // If action implies immediate completion (like swaps), we reset state
-        // Check if we are in DiceDuel, if so, don't reset
         let is_duel = matches!(self.step, GameStep::WaitingForDiceDuel { .. });
 
         if !is_duel {
-            // Check if this action was initiated by the current player or by another player
             let action_by_current_player = selector_idx == self.current_player_idx;
 
             if action_by_current_player {
-                // Restore previous step if it exists (e.g. from a card used in hand)
                 if let Some(prev) = self.previous_step.take() {
                     self.step = *prev;
                 } else {
-                    // Current player used a card - restore their reroll or end turn
                     if let Some(pending_reroll) = &self.pending_reroll {
                         if pending_reroll.player_idx == selector_idx {
                             self.step = GameStep::WaitingForRerollDice { player_idx: selector_idx };
@@ -1214,26 +1140,18 @@ impl Game {
                         }
                     } else {
                         self.step = GameStep::WaitingForRoll;
-                        // For Chance cards (like StealStampAndPay), we normally end turn
-                        // For others, if we don't have a previous step, we default to ending turn
                         self.end_turn();
                     }
                 }
             } else {
-                // Another player used a reactive card against the current player
-                // Restore the current player's reroll state - they should still get to roll the reroll
                 if self.pending_reroll.is_some() {
-                    // Restore reroll state for the current player
                     self.step = GameStep::WaitingForRerollDice { player_idx: self.current_player_idx };
                 } else if let Some(prev) = self.previous_step.take() {
-                    // Restaurăm previous_step dacă există
                     self.step = *prev;
                 } else if self.has_rolled_this_turn && self.players[self.current_player_idx].consecutive_doubles == 0 {
-                    // Jucătorul curent a rulat deja și nu are dublă activă => tura s-a terminat
                     self.step = GameStep::WaitingForRoll;
                     self.end_turn();
                 } else {
-                    // Nu a rulat încă sau are dublă activă => rămâne WaitingForRoll
                     self.step = GameStep::WaitingForRoll;
                 }
             }
@@ -1260,7 +1178,6 @@ impl Game {
             _ => return Err("Nu ești într-un duel de zaruri!".to_string()),
         };
 
-        // Determine who is rolling based on current state
         let roller_idx = if c_roll.is_none() { challenger_idx } else { target_idx };
 
         // Roll TWO dice
@@ -1291,7 +1208,7 @@ impl Game {
             };
 
             return Ok(TurnResult {
-                die1: t1, die2: t2, // Show target's roll
+                die1: t1, die2: t2,
                 is_double: t1 == t2,
                 is_forced_deal: false,
                 new_position: self.players[self.current_player_idx].position as u8,
@@ -1359,7 +1276,6 @@ impl Game {
         Ok(())
     }
 
-    /// Folosește un cartonaș Here&Now din mână
     pub fn use_here_and_now_card(&mut self, player_idx: usize, card_id: String) -> Result<TurnResult, String> {
         if self.game_over {
             return Err("Game is over!".to_string());
@@ -1374,7 +1290,6 @@ impl Game {
 
         self.execute_here_and_now_action(player_idx, card.action.clone())?;
 
-        // îl scoatem din mână doar după succes
         if let Some(pos) = self.players[player_idx].here_and_now_cards.iter().position(|c| c.id == card_id) {
             self.players[player_idx].here_and_now_cards.remove(pos);
         }
@@ -1385,17 +1300,11 @@ impl Game {
         self.here_and_now_deck.discard(card);
         self.update_all_reactive_statuses();
 
-        // Dacă starea jocului s-a schimbat (e.g. așteptăm o selecție sau o decizie de cumpărare),
-        // păstrăm previous_step pentru a ne putea întoarce la el.
-        // Altfel, curățăm previous_step.
         let step_changed = self.step != old_step;
         if !step_changed {
             self.previous_step = None;
         }
 
-        // Dacă jucătorul care a folosit cardul e la închisoare și NU e current player,
-        // ne asigurăm că step-ul curent (WaitingForJailDecision sau WaitingForRoll) rămâne intact.
-        // Altfel un Say No folosit din jail ar putea schimba fluxul turelor.
         let current_step_is_jail = matches!(self.step, GameStep::WaitingForJailDecision);
         if player_idx != self.current_player_idx && self.players[self.current_player_idx].in_jail && !current_step_is_jail {
             self.step = GameStep::WaitingForJailDecision;
@@ -1413,9 +1322,6 @@ impl Game {
             GameStep::WaitingForRerollDice { .. } => false,
             GameStep::WaitingForStampSelection { .. } => false,
             _ => {
-                // After using a Here & Now card, stay in current state
-                // (player can still roll the reroll dice if they have one pending)
-                // Don't end the turn yet
                 false
             }
         };
@@ -1425,7 +1331,7 @@ impl Game {
             die2: 0,
             is_double: false,
             is_forced_deal: false,
-            new_position: self.players[self.current_player_idx].position as u8, // Fix: use current player position for result
+            new_position: self.players[self.current_player_idx].position as u8,
             went_to_jail: false,
             turn_ends,
             current_player_index: self.current_player_idx as u8,
@@ -1471,7 +1377,6 @@ impl Game {
                 if self.players[player_idx].passport.stamp_count() == 0 {
                     return Err("Nu ai nicio ștampilă de oferit la schimb!".to_string());
                 }
-                // Trigger target selection directly
                 self.step = GameStep::WaitingForTargetSelection {
                     action: "SwapStamps".to_string(),
                     card_id: None,
@@ -1514,7 +1419,6 @@ impl Game {
                     return Err("Nu există alți jucători!".to_string());
                 }
 
-                // Identificăm numărul maxim de ștampile printre adversari
                 let max_stamps = opponents.iter()
                     .map(|&i| self.players[i].passport.stamp_count())
                     .max()
@@ -1529,12 +1433,10 @@ impl Game {
                     return Err("Nimeni nu are mai multe ștampile decât tine!".to_string());
                 }
 
-                // Jucătorii de pe primul loc (pot fi mai mulți)
                 let mut richest: Vec<usize> = opponents.into_iter()
                     .filter(|&i| self.players[i].passport.stamp_count() == max_stamps)
                     .collect();
 
-                // Sortăm "richest" după înălțimea totală a pașaportului (tie-break)
                 richest.sort_by(|&a, &b| {
                     let h_a = self.players[a].passport.left_height_used + self.players[a].passport.right_height_used;
                     let h_b = self.players[b].passport.left_height_used + self.players[b].passport.right_height_used;
@@ -1547,7 +1449,6 @@ impl Game {
                 } else if count == 2 {
                     vec![(richest[0], 100), (richest[1], 100)]
                 } else {
-                    // Dacă sunt 3 sau mai mulți, top 2 plătesc 70, al 3-lea plătește 60. Restul nimic (limităm la 200 total)
                     let mut p = Vec::new();
                     if richest.len() >= 1 { p.push((richest[0], 70)); }
                     if richest.len() >= 2 { p.push((richest[1], 70)); }
@@ -1590,7 +1491,6 @@ impl Game {
                     let price = record.price;
                     let stamp_name = record.name.clone();
 
-                    // Căutăm stampila la TOȚI jucătorii (nu doar la cel original) pentru a suporta trade-uri
                     let mut current_owner_idx: Option<usize> = None;
                     for (idx, p) in self.players.iter().enumerate() {
                         if p.passport.find_stamp_index(&stamp_name).is_some() {
@@ -1602,16 +1502,12 @@ impl Game {
                     let old_buyer_idx = if let Some(owner_idx) = current_owner_idx {
                         owner_idx
                     } else {
-                        // Stampila nu a fost găsită la nimeni - poate a fost vândută la bancă
                         return Err("Proprietatea nu mai există în joc!".to_string());
                     };
 
-                    // Verificăm dacă eu am bani să-l cumpăr
                     if self.players[player_idx].pay_money(price) {
-                        // Refundăm actualul proprietar
                         self.players[old_buyer_idx].add_money(price);
 
-                        // Mutăm ștampila de la actualul proprietar la mine
                         if let Some(pos) = self.players[old_buyer_idx].passport.find_stamp_index(&stamp_name) {
                             if let Some(stamp) = self.players[old_buyer_idx].passport.remove_stamp_at(pos) {
                                 let s_id = format!("{}", stamp.destination_id.unwrap_or(0));
@@ -1650,21 +1546,6 @@ impl Game {
                 }
             },
             HereAndNowCardAction::SayNo => {
-                // ====================================================================
-                // SAY NO — LOGICĂ UNDO / REVERT
-                //
-                // Căutăm în ultimele acțiuni din history ceva care i-a afectat pe
-                // `player_idx` fără ca el să fie inițiatorul.  Acceptăm:
-                //   • Payment  : from==me && initiator!=me  (am plătit forțat)
-                //   • Payment  : from!=me && to==me && initiator!=me (revert anterior, e.g. Say No al adversarului)
-                //   • StampTransfer: from==me && initiator!=me  (mi-a luat ștampila)
-                //   • StampTransfer: from!=me && to==me && initiator!=me (revert anterior)
-                //
-                // IMPORTANT: pentru un Swap, în history există DOUĂ StampTransfer
-                //   consecutive cu acelaşi initiator.  Le detectăm și le anulăm ATOMIC.
-                // ====================================================================
-
-                // --- pasul 1: găsim indexul din history al acțiunii de anulat ---
                 let window_size = 15;
                 let found_revert: Option<(usize, GameAction)> = {
                     let recent: Vec<(usize, &GameAction)> = self.history.iter()
@@ -1713,7 +1594,6 @@ impl Game {
                     self.players[player_idx].say_no_cards += 1;
 
                     match action {
-                        // ... (payment revert remains same) ...
                         GameAction::Payment { is_tax: _, from, to, amount, .. } => {
                             if let (Some(me), Some(creditor)) = (from, to) {
                                 if me == player_idx {
@@ -1736,14 +1616,8 @@ impl Game {
                         // STAMP TRANSFER revert
                         // ----------------------------------------------------------
                         GameAction::StampTransfer { from, to, stamp_name, stamp_id: _, is_first_class: _, initiator } => {
-
-                            // --- detectăm dacă face parte dintr-un SWAP (pereche de transferuri) ---
-                            // Un swap are DOUĂ StampTransfer consecutive cu acelaşi initiator.
-                            // Verificăm și înainte (idx-1) și înapoi (idx+1) pentru a fi siguri.
-
                             let mut swap_pair: Option<GameAction> = None;
 
-                            // Verificăm înapoi (prev)
                             if idx_in_history > 0 {
                                 if let Some(GameAction::StampTransfer { initiator: prev_init, from: pf, to: pt, .. }) = self.history.get(idx_in_history - 1) {
                                     if *prev_init == initiator {
@@ -1758,7 +1632,6 @@ impl Game {
                                 }
                             }
 
-                            // Dacă nu s-a găsit înapoi, verificăm înainte (next) - CAZUL SNEAKY SWAP unde SayNo a găsit prima acțiune
                             if swap_pair.is_none() && idx_in_history + 1 < self.history.len() {
                                 if let Some(GameAction::StampTransfer { initiator: next_init, from: nf, to: nt, .. }) = self.history.get(idx_in_history + 1) {
                                     if *next_init == initiator {
@@ -1784,12 +1657,6 @@ impl Game {
                                     ..
                                 } = other_transfer
                                 {
-                                    // Transferul curent  (idx):   from -> to   cu stamp_name
-                                    // Transferul anterior (idx-1): other_from -> other_to  cu other_stamp_name
-                                    //
-                                    // stamp_name      se află acum la `to`       → trebuie să ajungă înapoi la `from`
-                                    // other_stamp_name se află acum la `other_to` → trebuie să ajungă înapoi la `other_from`
-
                                     if let (Some(h1), Some(o1), Some(h2), Some(o2)) = (to, from, other_to, other_from) {
                                         let sn  = stamp_name.clone();
                                         let osn = other_stamp_name.clone();
@@ -1848,17 +1715,9 @@ impl Game {
                                 }
 
                             } else {
-                                // ============================================================
-                                // SINGLE TRANSFER REVERT  (inclusiv TakeAllLastStamps)
-                                // ============================================================
-                                // (a) from==player_idx, to==Some(X)  → ştampila e la X, o întoarcem la player_idx
-                                // (b) from==Some(X), to==player_idx  → ştampila e la player_idx (revert anterior), o întoarcem la X
-                                // (c) from==player_idx, to==None     → TakeAllLastStamps, reconstruim ştampila
-
                                 if from == Some(player_idx) {
                                     match to {
                                         Some(tgt) => {
-                                            // (a) stampila e la tgt, o întoarcem la player_idx
                                             if let Some(pos) = self.players[tgt].passport.find_stamp_index(&stamp_name) {
                                                 if let Some(s) = self.players[tgt].passport.remove_stamp_at(pos) {
                                                     let s_name = s.name.clone();
@@ -1875,15 +1734,11 @@ impl Game {
                                                         initiator: Some(player_idx),
                                                     });
 
-                                                    // Caz special StealStampAndPay: dacă imediat înainte de
-                                                    // StampTransfer există un Payment { is_tax: false, is_tax: false, from: tgt, to: me }
-                                                    // cu același initiator, returnăm și banii.
                                                     if idx_in_history > 0 {
                                                         if let Some(GameAction::Payment { from: pf, to: pt, amount: pa, initiator: pi, .. })
                                                             = self.history.get(idx_in_history - 1).cloned()
                                                         {
                                                             if pf == Some(tgt) && pt == Some(player_idx) && pi == initiator {
-                                                                // returnăm banii: player_idx → tgt
                                                                 if self.players[player_idx].pay_money(pa) {
                                                                     self.players[tgt].add_money(pa);
                                                                     println!("🛑 SAY NO! Banii de G{} returnați la {}.", pa, self.players[tgt].name);
@@ -1905,7 +1760,6 @@ impl Game {
                                             }
                                         },
                                         None => {
-                                            // (c) TakeAllLastStamps
                                             let stamp_obj = if stamp_name == "First Class" {
                                                 Stamp::first_class()
                                             } else {
@@ -1930,7 +1784,6 @@ impl Game {
                                         }
                                     }
                                 } else if to == Some(player_idx) {
-                                    // (b) revert-of-revert: ştampila e la mine, o întoarcem la `from`
                                     if let Some(src) = from {
                                         if let Some(pos) = self.players[player_idx].passport.find_stamp_index(&stamp_name) {
                                             if let Some(s) = self.players[player_idx].passport.remove_stamp_at(pos) {
@@ -1967,7 +1820,6 @@ impl Game {
             HereAndNowCardAction::DiscountPurchase => {
                 self.players[player_idx].discount_purchase_ready = true;
 
-                // ✅ REACTIV: Dacă suntem deja în curs de a cumpăra și prețul e mai mare de 100, îl reducem
                 if let GameStep::WaitingForPurchaseDecision { dest_id, price, buyer_idx } = &self.step {
                     let (dest_id, price, buyer_idx) = (*dest_id, *price, *buyer_idx);
                     if buyer_idx == player_idx && price > 100 {
@@ -1978,7 +1830,7 @@ impl Game {
                             buyer_idx
                         };
                         self.players[player_idx].discount_purchase_ready = false;
-                        return Ok(()); // Ieșim pentru a evita logică de refund de mai jos
+                        return Ok(());
                     }
                 }
 
@@ -1998,8 +1850,6 @@ impl Game {
                 }
             },
             HereAndNowCardAction::CollectTax => {
-                // Valide doar dacă am plătit o taxă unui adversar ÎN TURA CURENTĂ
-                // (după ultimul Move din history)
                 let found_revert = {
                     let mut result = None;
                     for action in self.history.iter().rev().take(5) {
@@ -2024,7 +1874,6 @@ impl Game {
                 self.players[player_idx].collect_tax_ready = true;
 
                 if let Some((receiver_idx, amount)) = found_revert {
-                    // SebiTester3 plătește M(amount*2): M(amount) înapoi (anulare) + M(amount) taxa colectată
                     let total = amount * 2;
                     if self.players[receiver_idx].pay_money(total) {
                         self.players[player_idx].add_money(total);
@@ -2037,7 +1886,6 @@ impl Game {
                             initiator: None
                         });
                     } else if self.players[receiver_idx].pay_money(amount) {
-                        // N-are bani pentru ambele — cel puțin anulăm taxa plătită
                         self.players[player_idx].add_money(amount);
                         println!("🧾 COLLECT TAX! Plata de G{} anulată, dar {} nu are bani să plătească și taxa!",
                                  amount, self.players[receiver_idx].name);
@@ -2057,7 +1905,6 @@ impl Game {
                 if self.players[player_idx].passport.stamp_count() == 0 {
                     return Err("Nu ai nicio ștampilă de vândut!".to_string());
                 }
-                // Setăm step-ul pentru a aștepta alegerea ștampilei din frontend
                 self.step = GameStep::WaitingForStampSelection {
                     player_idx,
                     action: "StampAmnesty".to_string(),
@@ -2065,7 +1912,6 @@ impl Game {
                 println!("💰 Alege o ștampilă din pașaportul tău pentru a o vinde la 150% din preț!");
             },
             HereAndNowCardAction::BlockNextDouble => {
-                // Poate fi folosit împotriva oricărui jucător (inclusiv în afara turei proprii)
                 let has_targets = self.players.iter().enumerate()
                     .any(|(i, _)| i != player_idx);
 
@@ -2081,16 +1927,14 @@ impl Game {
                 println!("🎯 Alege jucătorul căruia vrei să îi blochezi următoarea dublă!");
             },
             HereAndNowCardAction::StealFirstClass => {
-                // Căutăm First Class stamp la toți jucătorii (nu doar la cel original)
                 let mut target_idx: Option<usize> = None;
                 let mut amount = 0;
 
                 for (idx, p) in self.players.iter().enumerate() {
                     for stamp in p.passport.left_column.iter().chain(p.passport.right_column.iter()) {
                         if stamp.destination_id.is_none() { // First Class stamp
-                            if idx != player_idx { // Nu poți fura de la tine
+                            if idx != player_idx {
                                 target_idx = Some(idx);
-                                // Folosim prețul din last_purchase dacă există
                                 if let Some(record) = &self.last_purchase {
                                     amount = record.price;
                                 }
@@ -2108,7 +1952,6 @@ impl Game {
                     None => return Err("Nu există nicio ștampilă First Class de furat de la alți jucători.".to_string()),
                 };
 
-                // Perform the steal
                 if let Some(stamp) = self.players[target_idx].passport.remove_last_stamp() {
                     println!("✈️ STEAL FIRST CLASS REACTIV! Ai furat ștampila de la {}.", self.players[target_idx].name);
 
@@ -2120,7 +1963,6 @@ impl Game {
                     let s_id = stamp.destination_id.map(|id| format!("{}", id)).unwrap_or_else(|| "first_class".to_string());
                     let is_fc = true; // By definition for this card
 
-                    // Record the transfer in history
                     self.history.push(GameAction::StampTransfer {
                         from: Some(target_idx),
                         to: Some(player_idx),
@@ -2130,7 +1972,6 @@ impl Game {
                         initiator: Some(player_idx),
                     });
 
-                    // Add stamp to the stealer
                     self.add_stamp_with_checks(player_idx, stamp);
                     self.log_action(Some(player_idx), format!("Steal First Class used against {}", self.players[target_idx].name));
                 } else {
@@ -2142,38 +1983,31 @@ impl Game {
     }
 
     fn end_turn(&mut self) {
-        // If turn ending is triggered, we move next regardless of old doubles
-        // unless they are currently rolling doubles and are NOT in jail.
         let in_jail = self.players[self.current_player_idx].in_jail;
         let consecutive_doubles = self.players[self.current_player_idx].consecutive_doubles;
 
         if consecutive_doubles == 0 || in_jail {
-            // Logică incrementare tură globală
             if self.current_player_idx == self.players.len() - 1 {
                 self.turn_number += 1;
                 println!("\n{}", "=".repeat(60).on_bright_blue().white());
                 println!("{}  ÎNCEPE TURA GLOBALĂ #{}  {}", "🌍".yellow(), self.turn_number, "🌍".yellow());
             }
 
-            // Reset "ready" flags for the player who just finished their turn
             let p = &mut self.players[self.current_player_idx];
             p.collect_tax_ready = false;
             p.discount_purchase_ready = false;
             p.intercept_purchase_ready = false;
             p.steal_first_class_ready = false;
 
-            // Resetăm flag-ul de roll la schimbarea turului
             self.has_rolled_this_turn = false;
 
             self.current_player_idx = (self.current_player_idx + 1) % self.players.len();
 
-            // Dacă jucătorul următor trebuie să sară tura (GoToFreeParking)
             if self.players[self.current_player_idx].skip_next_turn {
                 self.players[self.current_player_idx].skip_next_turn = false;
                 let name = self.players[self.current_player_idx].name.clone();
                 println!("{}", format!("⏭️ {} sare această tură (Free Parking).", name).bright_yellow());
                 self.log_action(Some(self.current_player_idx), format!("{} skipped turn (Free Parking)", name));
-                // Sărim recursiv la jucătorul următor
                 self.current_player_idx = (self.current_player_idx + 1) % self.players.len();
             }
 
@@ -2185,17 +2019,14 @@ impl Game {
 
             println!("\n{} {}", "Rândul jucătorului:".green().bold(), self.players[self.current_player_idx].name.yellow().bold());
         }
-        // Dacă are duble consecutive > 0 și nu e în închisoare, RĂMÂNE pe același player (nu apelăm end_turn în roll_dice pt duble)
     }
 
 
-    // --- Helper intern redenumit pentru claritate ---
     fn roll_dice_internal() -> DiceResult {
         let mut rng = rand::thread_rng();
         let d1 = rng.gen_range(1..=6);
         let d2 = rng.gen_range(1..=6);
 
-        // Dacă primul zar e 1, e Afacere Forțată (Mr. Geopoly)
         if d1 == 1 {
             return DiceResult::BusinessDeal(d2);
         }
@@ -2238,8 +2069,6 @@ impl Game {
             self.players[player_idx].add_money(200);
             println!("{}", "✨ Ai trecut pe la START! Primești G200.".green());
 
-            // Record partial move or just payment?
-            // START money is a transaction from Bank
             self.history.push(GameAction::Payment { is_tax: false,
                 from: None,
                 to: Some(player_idx),
@@ -2257,8 +2086,6 @@ impl Game {
         });
     }
 
-    /// Verifică dacă jucătorul curent a câștigat și termină jocul dacă da
-    /// Returnează true dacă jocul s-a terminat
     fn check_and_handle_win(&mut self, player_idx: usize) -> bool {
         if self.players[player_idx].passport.is_full() {
             println!(
@@ -2272,7 +2099,6 @@ impl Game {
         false
     }
 
-    /// Folosește un cartonaș Șansă din mână (ex: Ieșire din închisoare)
     pub fn use_chance_card(&mut self, player_idx: usize, card_id: String) -> Result<TurnResult, String> {
         if self.game_over {
             return Err("Game is over!".to_string());
@@ -2404,7 +2230,6 @@ impl Game {
                 let name = self.players[idx].name.clone();
                 self.log_action(Some(idx), format!("{} used chance card: Get Out Of Jail Free", name));
                 self.step = GameStep::WaitingForRoll;
-                // De asemenea, asigurăm că se șterge previous_step dacă există
                 self.previous_step = None;
             }
 
@@ -2417,7 +2242,7 @@ impl Game {
             ChanceCardAction::DiceChallenge => {
                 self.step = GameStep::WaitingForTargetSelection {
                     action: "DiceDuel".to_string(),
-                    card_id: None, // Chance cards don't have IDs in this context yet, or we need to pass it
+                    card_id: None,
                     selector_idx: idx
                 };
             }
@@ -2462,7 +2287,6 @@ impl Game {
                             self.add_stamp_with_checks(p1_idx, s2);
                             self.add_stamp_with_checks(p2_idx, s1);
 
-                            // Verificăm câștig
                             if self.check_and_handle_win(p1_idx) { return Ok(()); }
                             if self.check_and_handle_win(p2_idx) { return Ok(()); }
                         }
@@ -2486,7 +2310,6 @@ impl Game {
                 }
             }
             ChanceCardAction::GoToFreeParking => {
-                // Mută la Free Parking (poziția 20) — fără M200 de la START
                 let old_pos = self.players[idx].position;
                 self.players[idx].move_to(20);
                 println!("{}", "🅿️ Te duci la FREE PARKING! Sari tura următoare.".bright_yellow());
@@ -2497,7 +2320,6 @@ impl Game {
                     to: 20,
                 });
 
-                // Colectează ultimele 3 taxe de turist plătite din history
                 let last_3_taxes: Vec<i32> = self.history.iter()
                     .filter(|a| matches!(a, GameAction::Payment { is_tax: true, from: Some(f), .. } if *f == idx))
                     .rev()
@@ -2520,10 +2342,7 @@ impl Game {
                     println!("{}", "Nu ai taxe de turist plătite de recuperat.".yellow());
                 }
 
-                // Marchează că jucătorul sare tura următoare
                 self.players[idx].skip_next_turn = true;
-                // Forțăm sfârșitul turei IMEDIAT — chiar dacă s-a dat dublă
-                // (resetăm consecutive_doubles ca end_turn() să treacă la jucătorul următor)
                 self.players[idx].consecutive_doubles = 0;
                 let name = self.players[idx].name.clone();
                 self.log_action(Some(idx), format!("{} went to Free Parking, skips next turn, recovered M{} in taxes", name, total_refund));
@@ -2579,17 +2398,14 @@ impl Game {
         println!("🌍 {} - Preț: G{}, Taxă: G{}",
                  dest.name, dest.price, dest.tourist_tax);
 
-        // Verificăm cine deține această destinație
         let owner_idx = self.find_destination_owner(dest.id);
 
         if let Some(owner_idx) = owner_idx {
             if owner_idx == player_idx {
                 println!("{}", "Aceasta este destinația ta! Nu plătești nimic.".green());
             } else {
-                // Trebuie să plătim taxă
                 let mut tax = dest.tourist_tax;
 
-                // Verificăm dacă proprietarul are setul complet de culoare
                 if let Some(color_set) = self.board.color_sets.get(&dest.color) {
                     if self.players[owner_idx].has_color_set(color_set) {
                         tax *= 2;
@@ -2597,14 +2413,12 @@ impl Game {
                     }
                 }
 
-                // Verificăm dacă proprietarul are bonus dublu activ
                 if self.players[owner_idx].double_rent_active {
                     tax *= 2;
                     println!("{}", "⚠️ Proprietarul are bonus Here&Now activ! Taxa este DUBLĂ!".red());
                     self.players[owner_idx].double_rent_active = false;
                 }
 
-                // ✅ COLLECT TAX: jucătorul curent colectează taxa în loc să o plătească
                 if self.players[player_idx].collect_tax_ready {
                     println!("{}", "🧾 COLLECT TAX ACTIV! Colectezi taxa în loc să o plătești!".bright_green());
 
@@ -2623,7 +2437,6 @@ impl Game {
 
                     self.players[player_idx].collect_tax_ready = false;
 
-                    // Găsim și ștergem cardul din mână
                     if let Some(pos) = self.players[player_idx].here_and_now_cards.iter().position(|c| matches!(c.action, HereAndNowCardAction::CollectTax)) {
                         let card = self.players[player_idx].here_and_now_cards.remove(pos);
                         self.here_and_now_deck.discard(card);
@@ -2653,20 +2466,17 @@ impl Game {
                 }
             }
         } else {
-            // Destinația nu este deținută de nimeni
             println!("\n{}", "Această destinație nu este deținută de nimeni!".cyan());
 
             let mut final_price = dest.price;
             let buyer_idx = player_idx;
 
-            // ✅ DISCOUNT PURCHASE: plătești doar M100
             if self.players[player_idx].discount_purchase_ready {
                 final_price = 100;
                 println!("{}", "💸 DISCOUNT PURCHASE ACTIV! Plătești doar M100!".bright_green());
 
                 self.players[player_idx].discount_purchase_ready = false;
 
-                // Găsim și ștergem cardul din mână
                 if let Some(pos) = self.players[player_idx].here_and_now_cards.iter().position(|c| matches!(c.action, HereAndNowCardAction::DiscountPurchase)) {
                     let card = self.players[player_idx].here_and_now_cards.remove(pos);
                     self.here_and_now_deck.discard(card);
@@ -2675,9 +2485,7 @@ impl Game {
 
             println!("Vrei să o cumperi pentru M{}? (y/n)", final_price);
 
-            // Verificăm dacă jucătorul are bani - dacă da, așteptăm decizia
             if self.players[buyer_idx].money >= final_price as i32 {
-                // Setăm starea pentru a aștepta decizia jucătorului
                 self.step = GameStep::WaitingForPurchaseDecision {
                     dest_id: dest.id,
                     price: final_price as i32,
@@ -2704,9 +2512,7 @@ impl Game {
             return;
         }
 
-        // Verificăm dacă jucătorul are bani pentru a cumpăra
         if self.players[player_idx].money >= 100 {
-            // Setăm starea pentru a aștepta decizia jucătorului ORIGINAL
             self.step = GameStep::WaitingForFirstClassDecision { buyer_idx: player_idx };
             println!("Așteptăm decizia jucătorului {} pentru First Class...", self.players[player_idx].name);
         } else {
@@ -2733,10 +2539,8 @@ impl Game {
         let h_name = self.players[player_idx].name.clone();
         self.log_action(Some(player_idx), format!("{} got a treasure card", h_name));
 
-        // îl punem în mână mereu
         self.players[player_idx].here_and_now_cards.push(card.clone());
 
-        // pentru anumite cărți, afișăm doar ce fac (nu se mai armează automat)
         match card.action {
             HereAndNowCardAction::SayNo => {
                 println!("{}", "✅ Ai primit 'Spune nu!' (folosește-l din mână pentru a anula o acțiune).".bright_green());
@@ -2780,11 +2584,8 @@ impl Game {
     }
 
     fn handle_business_deal(&mut self, player_idx: usize, target_idx: Option<usize>) {
-        // Schimbăm ultima stampilă cu a unui adversar
         println!("♻️ Începe schimbul de ștampile...");
 
-        // Resetăm ultima achiziție înainte de schimb, pentru a nu permite Steal First Class reactiv
-        // decât dacă cineva completează un set DIN acest schimb.
         self.last_purchase = None;
 
         if self.players[player_idx].passport.stamp_count() == 0 {
@@ -2792,7 +2593,6 @@ impl Game {
             return;
         }
 
-        // Dacă nu avem target_idx (vechea logică sau nespecificat), găsim primul adversar eligibil
         let opp_idx = if let Some(idx) = target_idx {
             if idx == player_idx || self.players[idx].passport.stamp_count() == 0 {
                 None
@@ -2833,7 +2633,6 @@ impl Game {
                     let my_s_name = my_stamp.name.clone();
                     let opp_s_name = opp_stamp.name.clone();
 
-                    // Log the swap BEFORE moving the stamps and checking win
                     let my_name = self.players[player_idx].name.clone();
                     let opp_name = self.players[opp_idx].name.clone();
                     self.log_action(Some(player_idx), format!("{} swapped {} for {} with {}", my_name, my_s_name, opp_s_name, opp_name));
@@ -2841,7 +2640,6 @@ impl Game {
                     self.add_stamp_with_checks(player_idx, opp_stamp);
                     self.add_stamp_with_checks(opp_idx, my_stamp);
 
-                    // Verifică câștig pentru ambii jucători
                     if self.check_and_handle_win(player_idx) {
                         return;
                     }
@@ -2856,10 +2654,8 @@ impl Game {
     }
 
     fn handle_stamp_swap(&mut self, player_idx: usize, target_idx: Option<usize>) {
-        // Logică similară cu handle_business_deal, dar schimb de ștampile (SwapStamps)
         println!("♻️ Începe schimbul de ștampile...");
 
-        // Resetăm ultima achiziție înainte de schimb
         self.last_purchase = None;
 
         if self.players[player_idx].passport.stamp_count() == 0 {
@@ -2908,11 +2704,9 @@ impl Game {
                 self.add_stamp_with_checks(player_idx, stamp2.clone());
                 self.add_stamp_with_checks(opp_idx, stamp1.clone());
 
-                // Verifică câștig
                 if self.check_and_handle_win(player_idx) { return; }
                 if self.check_and_handle_win(opp_idx) { return; }
 
-                // Log the swap
                 let p_name = self.players[player_idx].name.clone();
                 let o_name = self.players[opp_idx].name.clone();
                 self.log_action(Some(player_idx), format!("{} swapped {} for {} with {}", p_name, stamp1.name, stamp2.name, o_name));
@@ -2924,13 +2718,12 @@ impl Game {
 
     fn handle_steal_stamp_and_pay(&mut self, player_idx: usize, target_idx: usize) {
         if let Some(stamp) = self.players[target_idx].passport.remove_last_stamp() {
-            // Găsim prețul real al proprietății
             let price = if stamp.destination_id.is_none() {
-                100 // First Class are preț fix de 100
+                100 // First Class - G100
             } else {
                 self.board.find_destination_by_name(&stamp.name)
                     .map(|d| d.price)
-                    .unwrap_or(200) // Fallback generic
+                    .unwrap_or(200)
             };
 
             if self.players[player_idx].pay_money(price as i32) {
@@ -2958,7 +2751,6 @@ impl Game {
                 println!("💸 Ai furat ștampila {} de la {} pentru M{}!", stamp_name, self.players[target_idx].name, price);
                 self.log_action(Some(player_idx), format!("{} stole {} from {} for M{}", self.players[player_idx].name, stamp_name, self.players[target_idx].name, price));
             } else {
-                // Dacă nu are bani, returnăm ștampila țintei
                 self.players[target_idx].passport.add_stamp(stamp);
                 println!("Nu ai destui bani să plătești ștampila (M{})!", price);
             }
@@ -2967,7 +2759,6 @@ impl Game {
         }
     }
 
-    /// Place a bid during an auction. Any player can bid.
     pub fn place_bid(&mut self, bidder_idx: usize, bid_amount: u32) -> Result<TurnResult, String> {
         if self.game_over {
             return Err("Game is over!".to_string());
@@ -3007,8 +2798,6 @@ impl Game {
         })
     }
 
-    /// Rezolvă alegerea ștampilei pentru Stamp Amnesty
-    /// stamp_name = numele ștampilei alese de jucător din pașaportul său
     pub fn resolve_stamp_amnesty(&mut self, stamp_name: String) -> Result<TurnResult, String> {
         if self.game_over {
             return Err("Game is over!".to_string());
@@ -3022,16 +2811,14 @@ impl Game {
             return Err("Acțiunea curentă nu este Stamp Amnesty!".to_string());
         }
 
-        // Găsim ștampila în pașaportul jucătorului
         let stamp_pos = self.players[player_idx].passport.find_stamp_index(&stamp_name)
             .ok_or_else(|| format!("Nu ai ștampila '{}' în pașaport!", stamp_name))?;
 
         let stamp = self.players[player_idx].passport.remove_stamp_at(stamp_pos)
             .ok_or_else(|| "Nu s-a putut scoate ștampila!".to_string())?;
 
-        // Calculăm 150% din prețul original
         let payout = if stamp.destination_id.is_none() {
-            // First Class — preț fix 100, deci 150
+            // First Class — fixed price 100, so 150
             150
         } else {
             let original_price = self.board.find_destination_by_name(&stamp.name)
@@ -3079,12 +2866,11 @@ impl Game {
             is_forced_deal: false,
             new_position: self.players[self.current_player_idx].position as u8,
             went_to_jail: false,
-            turn_ends: !had_prev, // jucătorul mai poate face acțiuni în tura sa chiar dacă turn_ends e false, dar aici zice dacă TURA s-a terminat
+            turn_ends: !had_prev,
             current_player_index: self.current_player_idx as u8,
         })
     }
 
-    /// Resolve an auction when the timer expires. Awards property to highest bidder.
     pub fn resolve_auction(&mut self) -> Result<TurnResult, String> {
         if self.game_over {
             return Err("Game is over!".to_string());
@@ -3132,7 +2918,6 @@ impl Game {
         })
     }
 
-    /// Helper pentru a adăuga o proprietate unui jucător, a verifica seturile și a verifica victoria
     fn acquire_property(&mut self, player_idx: usize, dest: &Destination) -> bool {
         let stamp = Stamp::from_destination(dest);
         println!("{}", format!("✅ {} a cumpărat destinația {} și a primit stampila!", self.players[player_idx].name, dest.name).green());
@@ -3153,17 +2938,14 @@ impl Game {
         self.add_stamp_with_checks(player_idx, stamp)
     }
 
-    /// Adaugă o ștampilă și verifică seturi/victorie
     fn add_stamp_with_checks(&mut self, player_idx: usize, stamp: Stamp) -> bool {
         let dest_id = stamp.destination_id;
         self.players[player_idx].passport.add_stamp(stamp);
 
-        // Dacă e o destinație, verificăm dacă s-a completat un set
         if let Some(id) = dest_id {
             if let Some(dest) = self.board.find_destination_by_id(id) {
                 if let Some(color_set) = self.board.color_sets.get(&dest.color) {
                     if self.players[player_idx].has_color_set(color_set) {
-                        // Check if we already got First Class for this color set (one-time bonus)
                         if !self.players[player_idx].completed_color_sets.contains(&dest.color) {
                             println!("{}", "🎉 Ai completat setul de culoare! Primești o stampilă Clasa Întâi GRATIS!".bright_green());
                             self.players[player_idx].completed_color_sets.insert(dest.color.clone());
@@ -3187,7 +2969,6 @@ impl Game {
         if self.players[player_idx].passport.add_stamp(stamp) {
             self.first_class_stamps_available -= 1;
 
-            // Înregistrăm primirea pentru Steal First Class reactiv
             self.last_purchase = Some(PurchaseRecord {
                 dest_id: 0,
                 buyer_idx: player_idx,
@@ -3226,8 +3007,6 @@ impl Game {
                 println!("{}", format!("Ultima ștampilă '{}' revine pe tablă", stamp.name).red());
                 let bankrupt_name = self.players[player_idx].name.clone();
                 self.log_action(Some(player_idx), format!("{} went bankrupt and their last stamp {} returned to the board", bankrupt_name, stamp.name));
-                // When returning to board, the property becomes unowned.
-                // find_destination_by_id and similar will naturally see it's not in anyone's passport.
             }
         } else {
             println!("{}", "Jucătorul nu are ștampile de cedat.".yellow());

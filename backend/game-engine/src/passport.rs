@@ -9,7 +9,7 @@ pub const TOUCH_OVERLAP_CM: f32 = 0.025;  // 1px / 40px_per_cm — slight overla
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Stamp {
-    pub destination_id: Option<u8>, // None pentru Clasa Întâi
+    pub destination_id: Option<u8>, // None for First Class
     pub diameter: f32,
     pub name: String,
 }
@@ -102,10 +102,7 @@ impl Passport {
         prev_y + prev_d
     }
 
-    /// Încearcă să adauge o stampilă în pașaport
-    /// Returnează true dacă a fost adăugată cu succes
     pub fn add_stamp(&mut self, stamp: Stamp) -> bool {
-        // 1️⃣ Încercăm coloana STÂNGĂ — simulăm adăugarea și verificăm înălțimea
         {
             let mut test_col = self.left_column.clone();
             test_col.push(stamp.clone());
@@ -117,11 +114,9 @@ impl Passport {
             }
         }
 
-        // 2️⃣ Altfel, coloana DREAPTĂ (chiar dacă depășește)
         self.right_column.push(stamp);
         self.right_height_used = Self::column_height(&self.right_column);
 
-        // 3️⃣ Dacă depășim coloana dreaptă (adăugăm un buffer mic pentru a evita erorile de tip float încât 7.00001 să nu declanșeze câștigul)
         if self.right_height_used > RIGHT_COLUMN_HEIGHT + 0.005 {
             self.overflowed = true;
         }
@@ -129,12 +124,10 @@ impl Passport {
         true
     }
 
-    /// Verifică dacă pașaportul este plin (câștigător)
     pub fn is_full(&self) -> bool {
         self.overflowed
     }
 
-    /// Întoarce ultima stampilă adăugată
     pub fn remove_last_stamp(&mut self) -> Option<Stamp> {
         if let Some(stamp) = self.right_column.pop() {
             self.right_height_used = Self::column_height(&self.right_column);
@@ -152,12 +145,10 @@ impl Passport {
         None
     }
 
-    /// Returnează numărul total de stampile
     pub fn stamp_count(&self) -> usize {
         self.left_column.len() + self.right_column.len()
     }
 
-    /// Returnează toate ID-urile de destinații deținute
     pub fn get_destination_ids(&self) -> Vec<u8> {
         let mut ids = Vec::new();
 
@@ -176,7 +167,6 @@ impl Passport {
         ids
     }
 
-    /// Returnează toate ștampilele din pașaport
     pub fn all_stamps(&self) -> Vec<&Stamp> {
         let mut v = Vec::new();
         for s in &self.left_column { v.push(s); }
@@ -184,7 +174,6 @@ impl Passport {
         v
     }
 
-    /// Caută o ștampilă după nume și returnează indexul global
     pub fn find_stamp_index(&self, stamp_name: &str) -> Option<usize> {
         for (i, stamp) in self.left_column.iter().enumerate() {
             if stamp.name == stamp_name {
@@ -199,7 +188,6 @@ impl Passport {
         None
     }
 
-    /// Șterge ștampila de la poziția specificată (index global)
     pub fn remove_stamp_at(&mut self, global_idx: usize) -> Option<Stamp> {
         if global_idx < self.left_column.len() {
             let stamp = self.left_column.remove(global_idx);
@@ -220,7 +208,6 @@ impl Passport {
         }
     }
 
-    /// Afișare detaliată a pașaportului
     pub fn display(&self) {
         println!("  📘 PAȘAPORT:");
         println!("    Coloana Stângă (8cm): {:.2}cm umplut", self.left_height_used);
@@ -252,7 +239,6 @@ mod tests {
     fn test_passport_filling() {
         let mut passport = Passport::new();
 
-        // Adăugăm stampile mici
         let stamp1 = Stamp {
             destination_id: Some(1),
             diameter: 1.5,
@@ -260,16 +246,12 @@ mod tests {
         };
 
         assert!(passport.add_stamp(stamp1.clone()));
-        // Primul element este exact diametrul
         assert!((passport.left_height_used - 1.5).abs() < 0.001);
 
-        // Umplem coloana stângă - cu noul model de stivuire, încap mai multe
-        // 1.5 + (6 * (1.118 - 0.025)) = 8.058cm (a 7-a ștampilă depășește)
         for _ in 0..5 {
             passport.add_stamp(stamp1.clone());
         }
 
-        // A 7-a ștampilă ar trebui să meargă în dreapta
         assert!(passport.add_stamp(stamp1.clone()));
         assert!(passport.right_height_used > 0.0);
     }
@@ -284,17 +266,13 @@ mod tests {
             name: "Big".to_string(),
         };
 
-        // umplem stânga - 2.5cm lățime, 2.5cm diametru -> se stivuiesc perfect vertical
-        // Înălțime = 2.5 + 2.5 - 0.025 + 2.5 - 0.025 = 7.45cm
         passport.add_stamp(big_stamp.clone()); 
         passport.add_stamp(big_stamp.clone());
         passport.add_stamp(big_stamp.clone());
 
-        // umplem dreapta
         passport.add_stamp(big_stamp.clone());
         passport.add_stamp(big_stamp.clone());
 
-        // această ștampilă DEPĂȘEȘTE (7.45cm > 7.0cm limită coloana dreaptă)
         passport.add_stamp(big_stamp.clone());
 
         assert!(passport.is_full());

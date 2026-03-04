@@ -39,20 +39,15 @@ pub enum Space {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Board {
     pub spaces: Vec<Space>,
-    pub color_sets: HashMap<Color, Vec<u8>>, // culoare -> lista de ID-uri destinații
+    pub color_sets: HashMap<Color, Vec<u8>>,
 }
 
 impl Board {
     pub fn new() -> Self {
         let mut spaces = Vec::new();
 
-        // Poziția 0: START
         spaces.push(Space::Start);
 
-        // Vom construi tabla în sensul acelor de ceasornic
-        // 40 spații total (ca în Geopoly clasic)
-
-        // Destinații conform documentului
         let destinations = vec![
             Destination {
                 id: 22,
@@ -232,9 +227,6 @@ impl Board {
             },
         ];
 
-        // Construim tabla cu 40 spații (similar Geopoly clasic)
-        // Poziționăm destinațiile și spațiile speciale strategic
-
         spaces.push(Space::Destination(destinations[0].clone())); // Madrid
         spaces.push(Space::Chance);
         spaces.push(Space::Destination(destinations[1].clone())); // Giethoorn
@@ -285,7 +277,6 @@ impl Board {
         spaces.push(Space::FirstClass);
         spaces.push(Space::Destination(destinations[21].clone())); // Lima
 
-        // Construim seturile de culori pentru bonus-uri
         let mut color_sets = HashMap::new();
         for dest in &destinations {
             color_sets.entry(dest.color.clone())
@@ -304,7 +295,6 @@ impl Board {
         self.spaces.len()
     }
 
-    /// Găsește o destinație după ID
     pub fn find_destination_by_id(&self, dest_id: u8) -> Option<&Destination> {
         for space in &self.spaces {
             if let Space::Destination(dest) = space {
@@ -316,7 +306,6 @@ impl Board {
         None
     }
 
-    /// Găsește o destinație după nume
     pub fn find_destination_by_name(&self, name: &str) -> Option<&Destination> {
         for space in &self.spaces {
             if let Space::Destination(dest) = space {

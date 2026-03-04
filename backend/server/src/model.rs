@@ -91,8 +91,6 @@ impl Default for Player {
     }
 }
 
-// GameState struct removed, replaced by game_engine::game::Game
-
 #[derive(Debug, Clone, Serialize, Deserialize, SimpleObject)]
 #[graphql(complex)]
 pub struct Lobby {
@@ -105,7 +103,7 @@ pub struct Lobby {
     pub state: String, // "waiting", "playing"
     pub created_at: String,
     #[serde(default, rename = "game")]
-    #[graphql(skip)] // We will expose this manually via ComplexObject or specific fields
+    #[graphql(skip)]
     pub game: Option<game_engine::game::Game>,
 }
 

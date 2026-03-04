@@ -244,9 +244,6 @@ watchEffect(() => {
       } else {
         gameState.diceDuel = null
       }
-      // Check for auction
-      // If we already have a pendingAuction and the ID/bid matches, update it (to keep the local object ref if possible, or just replace)
-      // Actually, standard replacing is fine, the watch will handle diffing deeply or property-wise
       gameState.pendingAuction = lobby.gameState.pendingAuction || null
       gameState.activityLog = lobby.gameState.activityLog || []
 
@@ -720,8 +717,6 @@ const handleSelectTarget = async (targetUsername: string) => {
 // Handle Place Bid
 const handlePlaceBid = async (amount: number) => {
   try {
-    // Optimistic: update locally to feel instant? 
-    // No, wait for server to ensure validation (money etc)
     await placeBidMutation({
       code: props.code,
       username: username,
@@ -884,11 +879,6 @@ const isSpaceSelectable = (space: Space | undefined) => {
   return gameState.pendingAirportDestination && canPickDestination.value && (space.type === 'destination' || space.type === 'first_class');
 }
 
-// Zone mapping: 
-// zone-bottom-right -> player index 0
-// zone-bottom-left  -> player index 1
-// zone-top-left     -> player index 2
-// zone-top-right    -> player index 3
 const getPlayerByZone = (zone: 'bottom-right' | 'bottom-left' | 'top-left' | 'top-right') => {
   const indexMap = {
     'bottom-right': 0,

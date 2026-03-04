@@ -214,7 +214,6 @@ impl Lobby {
 fn sync_lobby_state(players: &mut Vec<Player>, game: &Game) {
     const COLUMN_WIDTH: f32 = 100.0; // px
     const PX_PER_CM: f32 = 40.0;
-    // Small overlap past tangent point for the "just touching" look
     const TOUCH_OVERLAP: f32 = 1.0; // 0.025cm * 40px/cm — synced with passport.rs
 
     for server_player in players {
@@ -224,8 +223,6 @@ fn sync_lobby_state(players: &mut Vec<Player>, game: &Game) {
             server_player.money = engine_player.money;
             let mut properties = Vec::new();
 
-            // Helper: compute stamp positions for a column using circle-tangent geometry
-            // Stamps zig-zag: even indices flush right, odd indices flush left
             let compute_column = |column: &[game_engine::passport::Stamp], col_name: &str, game: &Game| -> Vec<crate::model::PropertyInfo> {
                 let mut col_props = Vec::new();
                 let mut prev_x: f32 = 0.0;
@@ -255,16 +252,11 @@ fn sync_lobby_state(players: &mut Vec<Player>, game: &Game) {
 
                         // Vertical distance for circles to be tangent
                         let dy = if dx >= sum_r {
-                            // Circles are too far apart horizontally to touch,
-                            // just stack vertically with no gap
                             0.0
                         } else {
                             (sum_r * sum_r - dx * dx).sqrt()
                         };
 
-                        // Position: previous center_y + dy - current radius
-                        // = (prev_y + prev_r) + dy - r
-                        // Then subtract TOUCH_OVERLAP for slight overlap past tangent
                         prev_y + prev_r + dy - r - TOUCH_OVERLAP
                     };
 
@@ -276,17 +268,14 @@ fn sync_lobby_state(players: &mut Vec<Player>, game: &Game) {
                 col_props
             };
 
-            // Compute positions for left column
             let left_props = compute_column(&engine_player.passport.left_column, "left", game);
             properties.extend(left_props);
 
-            // Compute positions for right column
             let right_props = compute_column(&engine_player.passport.right_column, "right", game);
             properties.extend(right_props);
 
             server_player.properties = properties;
 
-            // Sync Here & Now cards
             server_player.here_and_now_cards = engine_player.here_and_now_cards.iter().map(|c| crate::model::GqlHereAndNowCard {
                 id: c.id.clone(),
                 description: c.description.clone(),
@@ -383,7 +372,7 @@ impl MutationRoot {
         let new_user = User {
             id: None,
             username: username.clone(),
-            password_hash, // Salvăm hash-ul, nu parola default
+            password_hash,
             created_at: Utc::now().to_rfc3339(),
         };
 
@@ -1035,10 +1024,7 @@ impl MutationRoot {
 
         if let Some(mut lobby) = lobby_opt {
             let game = lobby.game.as_mut().ok_or(Error::new("No game engine state"))?;
-            
-            // Validate turn - any participant can finish the duel? 
-            // Usually the current player or the one who just rolled. 
-            // Let's allow either challenger or target.
+
             let is_participant = match &game.step {
                 GameStep::WaitingForDiceDuelResult { challenger_idx, target_idx, .. } => {
                     game.players[*challenger_idx].name == username || game.players[*target_idx].name == username

@@ -12,36 +12,27 @@ pub struct Player {
     pub passport: Passport,
     pub in_jail: bool,
     pub jail_turns: u8,
-    pub get_out_of_jail_free: bool, // (Șansă) - păstrabil (kept for compatibility)
+    pub get_out_of_jail_free: bool,
 
-    pub here_and_now_cards: Vec<HereAndNowCard>, // în mână, păstrabile oricând
-    pub chance_cards: Vec<crate::cards::ChanceCard>, // în mână, păstrabile (ex: Ieșire închisoare)
+    pub here_and_now_cards: Vec<HereAndNowCard>,
+    pub chance_cards: Vec<crate::cards::ChanceCard>,
 
-    // Efecte Here&Now "armate" / păstrate ca stare (simplificare console)
     pub say_no_cards: u8,
     pub intercept_purchase_ready: bool,
     pub discount_purchase_ready: bool,
     pub collect_tax_ready: bool,
     pub steal_first_class_ready: bool,
 
-    pub consecutive_doubles: u8, // Tracks consecutive doubles for jail rule
+    pub consecutive_doubles: u8,
 
-    pub double_rent_active: bool, // păstrat din vechiul engine (nu strică)
-    pub can_use_say_no: bool, // NEW: Calculated based on history for UI locking
+    pub double_rent_active: bool,
+    pub can_use_say_no: bool,
     pub can_use_discount: bool,
     pub can_use_intercept: bool,
     pub can_use_collect_tax: bool,
     pub can_use_steal_first_class: bool,
-
-    // Track which color sets have already given First Class bonus (one-time per set)
     pub completed_color_sets: HashSet<Color>,
-
-    /// Setat când cineva folosește BlockNextDouble asupra acestui jucător.
-    /// La prima dublă: se mută normal, dar tura termină imediat.
     pub double_blocked: bool,
-
-    /// Setat când jucătorul trage cardul GoToFreeParking.
-    /// La începutul turei următoare, tura se sare automat.
     pub skip_next_turn: bool,
 }
 

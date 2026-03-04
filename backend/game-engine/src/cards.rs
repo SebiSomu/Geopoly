@@ -3,7 +3,7 @@ use rand::thread_rng;
 use serde::{Serialize, Deserialize};
 
 // ============================================================================
-// CHANCE CARDS 
+// CHANCE CARDS
 // ============================================================================
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -28,7 +28,7 @@ pub struct ChanceCard {
     pub id: String,
     pub description: String,
     pub action: ChanceCardAction,
-    pub can_keep: bool, // Doar "Get Out of Jail Free" poate fi păstrat
+    pub can_keep: bool, // Only for "get out of jail"
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -304,7 +304,6 @@ impl HereAndNowDeck {
             self.cards.shuffle(&mut rng);
         }
 
-        // ✅ dacă încă e gol (toate cărțile sunt în mâinile jucătorilor), refacem pachetul
         if self.cards.is_empty() {
             *self = HereAndNowDeck::new();
         }
@@ -312,7 +311,6 @@ impl HereAndNowDeck {
         self.cards.pop().expect("Here & Now deck is empty!")
     }
 
-    /// Distribuie 2 cărți inițiale fiecărui jucător
     pub fn deal_initial(&mut self) -> (HereAndNowCard, HereAndNowCard) {
         let card1 = self.draw();
         let card2 = self.draw();
