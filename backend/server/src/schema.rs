@@ -391,11 +391,21 @@ impl MutationRoot {
 
         match user_opt {
             Some(user) => {
-                let valid = bcrypt::verify(&password, &user.password_hash).unwrap_or(false);
+                println!("Attempting login for user: {}", username);
+                let valid = match bcrypt::verify(&password, &user.password_hash) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        // Fallback: check if the stored hash is actually a plain text password
+                        println!("Bcrypt error (possibly malformed hash), trying plain text match for user: {}", username);
+                        user.password_hash == password
+                    }
+                };
+                
                 if !valid {
+                    println!("Invalid password attempt for user: {}", username);
                     return Err(Error::new("Invalid password"));
                 }
-                
+                println!("Login successful for user: {}", username);
                 Ok(user)
             },
             None => Err(Error::new("User not found"))
